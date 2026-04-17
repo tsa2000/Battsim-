@@ -1,0 +1,6 @@
+pybamm>=24.0
+numpy>=1.24
+pandas>=2.0
+plotly>=5.18
+scipy>=1.11
+streamlit>=1.32
