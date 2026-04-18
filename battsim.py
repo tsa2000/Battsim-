@@ -350,17 +350,11 @@ def run_cosim(chem_name, n_cycles, c_rate, noise_std, prog, status):
     innovations = []
     trP_history = []
 
-
-
-        for k in range(N):
+    for k in range(N):
         vm = V_true[k] + np.random.normal(0.0, noise_std)
         v_est, soc_e, p1tr, p1s, q_e, r0_e, p2tr = ekf.step(vm, I_true[k])
         innovations.append(vm - v_est)
         trP_history.append(p1tr)
-        log["V_meas"][k]  = vm
-        log["V_est"][k]   = v_est
-
-
         log["V_meas"][k]  = vm
         log["V_est"][k]   = v_est
         log["soc_est"][k] = soc_e
@@ -373,8 +367,7 @@ def run_cosim(chem_name, n_cycles, c_rate, noise_std, prog, status):
             prog.progress(47 + int(48 * k / N))
 
     prog.progress(97)
-        return log, Q_nom, chem, innovations, trP_history
-
+    return log, Q_nom, chem, innovations, trP_history
 
 
 # ================================================================
