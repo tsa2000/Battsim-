@@ -782,8 +782,8 @@ if "log" in st.session_state:
     kpi(k5, "SOH (DEKF)",    f"{soh:.1f} %",        "EKF-2", warn=soh < 90)
     kpi(k6, "Max V error",   f"{v_err_max:.1f} mV", "Peak")
 
-    # Dashboard
-        st.markdown("<div class='section-hdr'>🔬 Simulation Diagnostics</div>",
+        # Dashboard
+    st.markdown("<div class='section-hdr'>🔬 Simulation Diagnostics</div>",
                 unsafe_allow_html=True)
     _innov = st.session_state.get("innovations", [])
     _trP   = st.session_state.get("trP_history", [])
@@ -799,10 +799,10 @@ if "log" in st.session_state:
                 <span style='color:#a0aec0;font-size:0.85rem'>{msg}</span>
             </div>""", unsafe_allow_html=True)
 
-
     st.markdown("<div class='section-hdr'>📊 Co-simulation Dashboard</div>",
                 unsafe_allow_html=True)
     render_dashboard(log, chem, n_cyc, cname)
+
 
     # Cycle UQ table
     st.markdown("<div class='section-hdr'>🔁 Uncertainty Propagation per Cycle</div>",
