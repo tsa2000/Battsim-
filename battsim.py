@@ -540,8 +540,63 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
                     showgrid=True, zeroline=False, linecolor='#cbd5e0')
 
     def to_img(fig):
-        img_bytes = pio.to_image(fig, format="png", scale=2)
-        return Image(BytesIO(img_bytes), width=17.5*cm, height=7*cm)
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as mpatches
+
+        fig_mpl, ax = plt.subplots(figsize=(10, 3.5))
+        fig_mpl.patch.set_facecolor('#f8fafc')
+        ax.set_facecolor('#f8fafc')
+
+        for trace in fig.
+            x = list(trace.x) if trace.x is not None else []
+            y = list(trace.y) if trace.y is not None else []
+            if not x or not y:
+                continue
+            color  = trace.line.color  if hasattr(trace, 'line') and trace.line and trace.line.color else "#00b4d8"
+            lw     = trace.line.width  if hasattr(trace, 'line') and trace.line and trace.line.width else 1.5
+            ls     = "--"              if hasattr(trace, 'line') and trace.line and trace.line.dash == "dash" else "-"
+            alpha  = getattr(trace, 'opacity', 1.0) or 1.0
+            label  = trace.name if hasattr(trace, 'name') and trace.showlegend is not False else None
+
+            # skip fill-only traces
+            if trace.mode == "lines" or trace.mode is None:
+                if trace.fill == "toself":
+                    continue
+                ax.plot(x, y, color=color, linewidth=lw, linestyle=ls,
+                        alpha=alpha, label=label)
+            if hasattr(trace, 'fill') and trace.fill == "tozeroy":
+                ax.fill_between(x, y, alpha=0.15, color=color)
+
+        title_text = fig.layout.title.text if fig.layout.title and fig.layout.title.text else ""
+        ax.set_title(title_text, fontsize=10, color="#1a202c", pad=6)
+
+        xaxis = fig.layout.xaxis
+        yaxis = fig.layout.yaxis
+        if xaxis and xaxis.title and xaxis.title.text:
+            ax.set_xlabel(xaxis.title.text, fontsize=8, color="#4a5568")
+        if yaxis and yaxis.title and yaxis.title.text:
+            ax.set_ylabel(yaxis.title.text, fontsize=8, color="#4a5568")
+
+        ax.tick_params(colors="#4a5568", labelsize=7)
+        ax.grid(True, color="#e2e8f0", linewidth=0.5)
+        for spine in ax.spines.values():
+            spine.set_edgecolor("#e2e8f0")
+
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(handles, labels, fontsize=7.5, framealpha=0.9,
+                      edgecolor="#cbd5e0", facecolor="white",
+                      loc="upper right", ncol=min(len(handles), 3))
+
+        plt.tight_layout(pad=0.5)
+        img_buf = BytesIO()
+        fig_mpl.savefig(img_buf, format="png", dpi=150, bbox_inches="tight")
+        plt.close(fig_mpl)
+        img_buf.seek(0)
+        return Image(img_buf, width=17.5*cm, height=7*cm)
+
 
     # ① Voltage
     f1 = go.Figure()
