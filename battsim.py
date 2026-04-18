@@ -165,14 +165,22 @@ def docv_dsoc(ocv_fn, soc, h=1e-4):
 # Machine 1 — PyBaMM DFN
 # ================================================================
 
+@st.cache_resource                        
+def load_pybamm_model(pset_name):            
+    import pybamm
+    model  = pybamm.lithium_ion.DFN()
+    params = pybamm.ParameterValues(pset_name)
+    return model, params
+
+
 def run_dfn(pset_name, n_cycles, c_rate, prog, status):
     import pybamm
 
     status.markdown(f"**[Machine 1 — DFN]** Loading parameter set `{pset_name}`...")
     prog.progress(5)
 
-    model  = pybamm.lithium_ion.DFN()
-    params = pybamm.ParameterValues(pset_name)
+    model, params = load_pybamm_model(pset_name)
+
 
     exp = pybamm.Experiment(
         [
