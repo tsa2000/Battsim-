@@ -6,3 +6,5 @@ scipy>=1.11
 streamlit>=1.32
 casadi
 anytree
+reportlab
+kaleido
