@@ -588,8 +588,8 @@ st.sidebar.markdown("""
 """, unsafe_allow_html=True)
 
 chem_name = st.sidebar.selectbox("🧪 Chemistry", list(CHEM.keys()))
-n_cycles  = st.sidebar.slider("🔁 Cycles", 1, 5, 3)
-c_rate    = st.sidebar.select_slider("⚡ C-Rate", [0.5, 1.0, 1.5, 2.0], value=1.0)
+n_cycles  = st.sidebar.slider("🔁 Cycles", 1, 35, 3)
+c_rate    = st.sidebar.select_slider("⚡ C-Rate", [0.5, 1.0, 1.5, 2.0, 3.0], value=1.0)
 noise_db  = st.sidebar.select_slider(
     "📡 Sensor noise",
     ["Low (5 mV)", "Medium (10 mV)", "High (30 mV)"],
