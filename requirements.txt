@@ -7,4 +7,4 @@ streamlit>=1.32
 casadi
 anytree
 reportlab
-kaleido
+matplotlib
