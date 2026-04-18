@@ -348,9 +348,16 @@ def run_cosim(chem_name, n_cycles, c_rate, noise_std, prog, status):
     status.markdown(f"**[Co-Sim]** Running {N:,} time steps — DEKF online estimation ...")
     ckpt = max(1, N // 40)
 
+innovations = []
+trP_history = []
+
+
     for k in range(N):
         vm = V_true[k] + np.random.normal(0.0, noise_std)
         v_est, soc_e, p1tr, p1s, q_e, r0_e, p2tr = ekf.step(vm, I_true[k])
+                innovations.append(vm - v_est)
+        trP_history.append(p1tr)
+
         log["V_meas"][k]  = vm
         log["V_est"][k]   = v_est
         log["soc_est"][k] = soc_e
@@ -363,7 +370,8 @@ def run_cosim(chem_name, n_cycles, c_rate, noise_std, prog, status):
             prog.progress(47 + int(48 * k / N))
 
     prog.progress(97)
-    return log, Q_nom, chem
+        return log, Q_nom, chem, innovations, trP_history
+
 
 
 # ================================================================
@@ -580,6 +588,54 @@ def compute_stats(log, n_cyc, Q_nom):
         for c in range(n_cyc)
     ]
     return v_rmse, s_rmse, p_peak, p_final, soh, cyc_pk
+    def diagnose_simulation(innovations, trP_history, soh, noise_std):
+    diagnostics = []
+
+    innov_rms   = np.sqrt(np.mean(np.array(innovations)**2))
+    innov_ratio = innov_rms / noise_std
+    if innov_ratio > 3.0:
+        diagnostics.append(("🔴", "EKF-1 Diverging",
+            f"Innovation/Noise = {innov_ratio:.1f}× (limit: 3×). Noise overwhelms EKF-1 "
+            f"or DFN dynamics at this C-Rate exceed the filter design envelope. "
+            f"In a real BMS this triggers a sensor fault alarm."))
+    elif innov_ratio > 1.5:
+        diagnostics.append(("🟡", "EKF-1 Under Stress",
+            f"Innovation/Noise = {innov_ratio:.1f}× (ideal < 1.5×). "
+            f"Filter tracks but Q or R matrix may need retuning."))
+    else:
+        diagnostics.append(("✅", "EKF-1 Healthy",
+            f"Innovation/Noise = {innov_ratio:.2f}× — consistent with noise model."))
+
+    trP_ratio = trP_history[-1] / trP_history[0]
+    if trP_ratio > 0.5:
+        diagnostics.append(("🔴", "EKF-1 Did Not Converge",
+            f"Final tr(P1) = {trP_ratio:.1%} of initial. Filter never gained confidence — "
+            f"noise too large or too few cycles to observe sufficient SOC dynamics."))
+    elif trP_ratio > 0.1:
+        diagnostics.append(("🟡", "Partial Convergence",
+            f"Final tr(P1) = {trP_ratio:.1%} of initial. "
+            f"More cycles or better P0 initialisation would help."))
+    else:
+        diagnostics.append(("✅", "EKF-1 Converged",
+            f"tr(P1) dropped to {trP_ratio:.1%} of initial — high confidence in state estimates."))
+
+    if soh > 1.0:
+        diagnostics.append(("🔴", "SOH Physically Impossible",
+            f"SOH = {soh*100:.1f}% exceeds 100%. EKF-2 diverged — high noise caused it to "
+            f"interpret voltage drops as capacity gains. A real battery cannot gain capacity."))
+    elif soh < 0.65:
+        diagnostics.append(("🔴", "SOH Unrealistically Low",
+            f"SOH = {soh*100:.1f}% — EKF-2 diverged in the opposite direction."))
+    elif soh > 0.98:
+        diagnostics.append(("🟡", "SOH Suspiciously High",
+            f"SOH = {soh*100:.1f}%. DFN (Chen2020) has no SEI degradation — "
+            f"Q_nom stays nearly constant regardless of cycle count. Model limitation, not real measurement."))
+    else:
+        diagnostics.append(("✅", "SOH Physically Valid",
+            f"SOH = {soh*100:.1f}% — within realistic range [65%–98%]."))
+
+    return diagnostics
+
 
 
 # ================================================================
@@ -667,7 +723,7 @@ if run_btn:
     pbar = st.progress(0)
     stat = st.empty()
     try:
-        log, Q_nom, chem = run_cosim(
+                log, Q_nom, chem, innovations, trP_history = run_cosim(
             chem_name, n_cycles, c_rate, noise_std, pbar, stat
         )
         pbar.progress(100)
@@ -679,6 +735,8 @@ if run_btn:
             "chem_name": chem_name,
             "n_cyc":     n_cycles,
             "noise_std": noise_std,
+                        "innovations":  innovations,
+            "trP_history":  trP_history,
         })
     except Exception as ex:
         import traceback
@@ -726,6 +784,23 @@ if "log" in st.session_state:
     kpi(k6, "Max V error",   f"{v_err_max:.1f} mV", "Peak")
 
     # Dashboard
+        st.markdown("<div class='section-hdr'>🔬 Simulation Diagnostics</div>",
+                unsafe_allow_html=True)
+    _innov = st.session_state.get("innovations", [])
+    _trP   = st.session_state.get("trP_history", [])
+    if _innov and _trP:
+        diag = diagnose_simulation(_innov, _trP, soh / 100, sess_noise)
+        for icon, title, msg in diag:
+            color  = "rgba(239,35,60,0.1)"  if icon=="🔴" else "rgba(247,127,0,0.1)" if icon=="🟡" else "rgba(45,198,83,0.1)"
+            border = "#ef233c" if icon=="🔴" else "#f77f00" if icon=="🟡" else "#2dc653"
+            st.markdown(f"""
+            <div style='background:{color};border-left:3px solid {border};
+                        padding:10px 14px;border-radius:8px;margin-bottom:8px;'>
+                <b style='color:{border}'>{icon} {title}</b><br>
+                <span style='color:#a0aec0;font-size:0.85rem'>{msg}</span>
+            </div>""", unsafe_allow_html=True)
+
+
     st.markdown("<div class='section-hdr'>📊 Co-simulation Dashboard</div>",
                 unsafe_allow_html=True)
     render_dashboard(log, chem, n_cyc, cname)
