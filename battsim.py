@@ -550,6 +550,7 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
         ax.set_facecolor('#f8fafc')
 
         for trace in fig.
+
             x = list(trace.x) if trace.x is not None else []
             y = list(trace.y) if trace.y is not None else []
             if not x or not y:
