@@ -30,6 +30,13 @@
 
 import warnings
 import io
+import base64
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import cm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, HRFlowable
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 import numpy as np
 import pandas as pd
@@ -408,6 +415,219 @@ def sensitivity_analysis(chem_name, base_log, session_noise=0.010):
 
     return results
 
+# ================================================================
+# PDF Export
+# ================================================================
+
+def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
+                 v_rmse, s_rmse, p_peak, p_final, soh,
+                 cyc_pk, innovations, trP_history, noise_std):
+    import plotly.io as pio
+    from io import BytesIO
+    from datetime import datetime
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+        rightMargin=1.5*cm, leftMargin=1.5*cm,
+        topMargin=1.5*cm, bottomMargin=1.5*cm)
+
+    styles = getSampleStyleSheet()
+    S = {
+        "title": ParagraphStyle('t', fontSize=18, textColor=colors.HexColor('#00b4d8'),
+            fontName='Helvetica-Bold', alignment=TA_CENTER, spaceAfter=4),
+        "sub":   ParagraphStyle('s', fontSize=9,  textColor=colors.HexColor('#718096'),
+            alignment=TA_CENTER, spaceAfter=2),
+        "h2":    ParagraphStyle('h', fontSize=12, textColor=colors.HexColor('#1a202c'),
+            fontName='Helvetica-Bold', spaceBefore=14, spaceAfter=6),
+        "ok":    ParagraphStyle('ok',  fontSize=8.5, textColor=colors.HexColor('#276749'), leading=13),
+        "warn":  ParagraphStyle('wn',  fontSize=8.5, textColor=colors.HexColor('#c05621'), leading=13),
+        "err":   ParagraphStyle('er',  fontSize=8.5, textColor=colors.HexColor('#9b2c2c'), leading=13),
+        "foot":  ParagraphStyle('f',   fontSize=7.5, textColor=colors.HexColor('#a0aec0'),
+            alignment=TA_CENTER),
+    }
+
+    story = []
+
+    # Header
+    story.append(Paragraph("🔋 BattSim v4.1 — Simulation Report", S["title"]))
+    story.append(Paragraph(
+        f"Generated: {datetime.now().strftime('%Y-%m-%d  %H:%M')}  |  "
+        f"Chemistry: {chem_name.split('—')[0].strip()}  |  Cycles: {n_cyc}",
+        S["sub"]))
+    story.append(HRFlowable(width="100%", thickness=1.5,
+                             color=colors.HexColor('#00b4d8'), spaceAfter=10))
+
+    # KPI table
+    story.append(Paragraph("Key Performance Indicators", S["h2"]))
+    kpi_data = [
+        ["Metric", "Value", "Filter"],
+        ["Voltage RMSE",  f"{v_rmse:.3f} mV",  "EKF-1"],
+        ["SOC RMSE",      f"{s_rmse:.4f} %",    "EKF-1"],
+        ["Peak tr(P1)",   f"{p_peak:.3e}",       "UQ State"],
+        ["Final tr(P1)",  f"{p_final:.3e}",      "UQ State"],
+        ["SOH (DEKF)",    f"{soh:.1f} %",        "EKF-2"],
+        ["Max V Error",   f"{np.abs(log['V_true']-log['V_est']).max()*1000:.2f} mV", "Peak"],
+    ]
+    t = Table(kpi_data, colWidths=[6*cm, 4.5*cm, 4*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND',    (0,0), (-1,0), colors.HexColor('#00b4d8')),
+        ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
+        ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0,0), (-1,-1), 9),
+        ('ROWBACKGROUNDS',(0,1), (-1,-1),
+            [colors.HexColor('#f7fafc'), colors.HexColor('#edf2f7')]),
+        ('GRID',          (0,0), (-1,-1), 0.4, colors.HexColor('#cbd5e0')),
+        ('ALIGN',         (1,1), (-1,-1), 'CENTER'),
+        ('TOPPADDING',    (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 10))
+
+    # Diagnostics
+    story.append(Paragraph("Simulation Diagnostics", S["h2"]))
+    diag = diagnose_simulation(innovations, trP_history, soh/100, noise_std)
+    for icon, title, msg in diag:
+        st_s = S["ok"] if icon=="✅" else (S["warn"] if icon=="🟡" else S["err"])
+        story.append(Paragraph(f"<b>{icon} {title}</b> — {msg}", st_s))
+    story.append(Spacer(1, 8))
+
+    # Cycle table
+    story.append(Paragraph("Uncertainty Propagation per Cycle", S["h2"]))
+    cyc_data = [["Cycle", "Peak tr(P1)", "Δ vs Cycle 1", "Status"]]
+    for i, p in enumerate(cyc_pk):
+        delta  = "—" if i==0 else f"{(p-cyc_pk[0])/cyc_pk[0]*100:+.1f}%"
+        status = "Baseline" if i==0 else ("Growing" if p>cyc_pk[0]*1.05 else "Stable")
+        cyc_data.append([f"Cycle {i+1}", f"{p:.3e}", delta, status])
+    ct = Table(cyc_data, colWidths=[3.5*cm, 4.5*cm, 4*cm, 3.5*cm])
+    ct.setStyle(TableStyle([
+        ('BACKGROUND',    (0,0), (-1,0), colors.HexColor('#2d3748')),
+        ('TEXTCOLOR',     (0,0), (-1,0), colors.white),
+        ('FONTNAME',      (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',      (0,0), (-1,-1), 8.5),
+        ('ROWBACKGROUNDS',(0,1), (-1,-1),
+            [colors.HexColor('#f7fafc'), colors.HexColor('#edf2f7')]),
+        ('GRID',          (0,0), (-1,-1), 0.4, colors.HexColor('#cbd5e0')),
+        ('ALIGN',         (1,0), (-1,-1), 'CENTER'),
+        ('TOPPADDING',    (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(ct)
+    story.append(Spacer(1, 10))
+
+    # Charts
+    story.append(HRFlowable(width="100%", thickness=0.8,
+                             color=colors.HexColor('#e2e8f0'), spaceAfter=8))
+    story.append(Paragraph("Co-Simulation Plots", S["h2"]))
+
+    t_h  = log["t"] / 3600.0
+    cc   = chem["color"]
+    pals = ["#00b4d8","#f77f00","#2dc653","#ef233c","#c77dff"]
+    N    = len(log["t"])
+    cl   = max(1, N // n_cyc)
+    ve   = np.abs(log["V_true"] - log["V_est"]) * 1000.0
+    se   = np.abs(log["soc_true"] - log["soc_est"]) * 100.0
+
+    CL = dict(paper_bgcolor='white', plot_bgcolor='#f8fafc',
+              font=dict(color='#2d3748', family='Arial', size=10),
+              margin=dict(t=40, b=36, l=58, r=16),
+              width=760, height=300,
+              legend=dict(bgcolor='white', bordercolor='#e2e8f0',
+                          borderwidth=1, font=dict(size=9)))
+
+    def ax(title):
+        return dict(title=title, gridcolor='#e2e8f0',
+                    showgrid=True, zeroline=False, linecolor='#cbd5e0')
+
+    def to_img(fig):
+        img_bytes = pio.to_image(fig, format="png", scale=2)
+        return Image(BytesIO(img_bytes), width=17.5*cm, height=7*cm)
+
+    # ① Voltage
+    f1 = go.Figure()
+    f1.add_trace(go.Scatter(x=t_h, y=log["V_meas"], mode="lines",
+        name="Measured", line=dict(color="#a0aec0", width=0.6), opacity=0.5))
+    f1.add_trace(go.Scatter(x=t_h, y=log["V_true"], mode="lines",
+        name="DFN truth", line=dict(color=cc, width=2)))
+    f1.add_trace(go.Scatter(x=t_h, y=log["V_est"], mode="lines",
+        name="DEKF est.", line=dict(color="#f77f00", width=1.8, dash="dash")))
+    f1.update_layout(title="① Terminal Voltage", xaxis=ax("Time [h]"), yaxis=ax("V [V]"), **CL)
+    story.append(to_img(f1)); story.append(Spacer(1, 6))
+
+    # ② SOC
+    f2 = go.Figure()
+    f2.add_trace(go.Scatter(x=t_h, y=log["soc_true"]*100, mode="lines",
+        name="SOC — DFN", line=dict(color=cc, width=2)))
+    f2.add_trace(go.Scatter(x=t_h, y=log["soc_est"]*100, mode="lines",
+        name="SOC — DEKF", line=dict(color="#f77f00", width=1.8, dash="dash")))
+    f2.update_layout(title="② State of Charge", xaxis=ax("Time [h]"), yaxis=ax("SOC [%]"), **CL)
+    story.append(to_img(f2)); story.append(Spacer(1, 6))
+
+    # ③ tr(P1)
+    f3 = go.Figure()
+    f3.add_trace(go.Scatter(x=t_h, y=log["P1_tr"], mode="lines",
+        line=dict(color="#2dc653", width=2),
+        fill="tozeroy", fillcolor="rgba(45,198,83,0.12)", showlegend=False))
+    f3.update_layout(title="③ State Covariance tr(P1)", xaxis=ax("Time [h]"), yaxis=ax("tr(P1)"), **CL)
+    story.append(to_img(f3)); story.append(Spacer(1, 6))
+
+    # ④ Param ID
+    f4 = go.Figure()
+    f4.add_trace(go.Scatter(x=t_h, y=log["Q_est"], mode="lines",
+        name="Q_nom [Ah]", line=dict(color="#c77dff", width=2)))
+    f4.add_trace(go.Scatter(x=t_h, y=log["R0_est"]*1000, mode="lines",
+        name="R0 [mΩ]", line=dict(color="#ffd60a", width=2)))
+    f4.update_layout(title="④ Online Parameter ID", xaxis=ax("Time [h]"), yaxis=ax("Value"), **CL)
+    story.append(to_img(f4)); story.append(Spacer(1, 6))
+
+    # ⑤ V error
+    f5 = go.Figure()
+    f5.add_trace(go.Scatter(x=t_h, y=ve, mode="lines",
+        line=dict(color="#f77f00", width=1.5),
+        fill="tozeroy", fillcolor="rgba(247,127,0,0.15)", showlegend=False))
+    f5.update_layout(title="⑤ Voltage Error", xaxis=ax("Time [h]"), yaxis=ax("|Error| [mV]"), **CL)
+    story.append(to_img(f5)); story.append(Spacer(1, 6))
+
+    # ⑥ SOC error
+    f6 = go.Figure()
+    f6.add_trace(go.Scatter(x=t_h, y=se, mode="lines",
+        line=dict(color="#ef233c", width=1.5),
+        fill="tozeroy", fillcolor="rgba(239,35,60,0.15)", showlegend=False))
+    f6.update_layout(title="⑥ SOC Error", xaxis=ax("Time [h]"), yaxis=ax("|Error| [%]"), **CL)
+    story.append(to_img(f6)); story.append(Spacer(1, 6))
+
+    # ⑦ Per-cycle
+    f7 = go.Figure()
+    for c in range(n_cyc):
+        s, e = c*cl, min((c+1)*cl, N)
+        tc   = (log["t"][s:e] - log["t"][s]) / 3600.0
+        f7.add_trace(go.Scatter(x=tc, y=log["P1_tr"][s:e], mode="lines",
+            name=f"Cycle {c+1}", line=dict(color=pals[c % len(pals)], width=2)))
+    f7.update_layout(title="⑦ Uncertainty per Cycle",
+        xaxis=ax("Time in cycle [h]"), yaxis=ax("tr(P1)"), **CL)
+    story.append(to_img(f7)); story.append(Spacer(1, 6))
+
+    # ⑧ tr(P2)
+    f8 = go.Figure()
+    f8.add_trace(go.Scatter(x=t_h, y=log["P2_tr"], mode="lines",
+        line=dict(color="#00b4d8", width=2),
+        fill="tozeroy", fillcolor="rgba(0,180,216,0.12)", showlegend=False))
+    f8.update_layout(title="⑧ Parameter Covariance tr(P2)",
+        xaxis=ax("Time [h]"), yaxis=ax("tr(P2)"), **CL)
+    story.append(to_img(f8))
+
+    # Footer
+    story.append(Spacer(1, 14))
+    story.append(HRFlowable(width="100%", thickness=0.8,
+                             color=colors.HexColor('#e2e8f0'), spaceAfter=6))
+    story.append(Paragraph(
+        "BattSim v4.1 · Designed &amp; Developed by Eng. Thaer Abushawar · "
+        "Plett (2004) · Chen et al. (2020) · Coman et al. (2022)",
+        S["foot"]))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.getvalue()
 
 # ================================================================
 # Color palette
@@ -426,11 +646,22 @@ LAYOUT_BASE = dict(
     paper_bgcolor=DARK,
     plot_bgcolor=PLOT,
     font=dict(color="#c9d1d9", family="Inter", size=11),
-    legend=dict(bgcolor="#161b22", bordercolor="#30363d",
-                borderwidth=1, font=dict(size=10)),
-    margin=dict(t=48, b=36, l=58, r=24),
-    height=380,
+    legend=dict(
+        bgcolor="rgba(22,27,34,0.95)",
+        bordercolor="#00b4d8",
+        borderwidth=1,
+        font=dict(size=11, color="#e2e8f0"),
+        itemsizing="constant",
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="left",
+        x=0,
+    ),
+    margin=dict(t=60, b=36, l=58, r=24),
+    height=400,
 )
+
 
 
 # ================================================================
@@ -851,6 +1082,29 @@ if "log" in st.session_state:
                 for v, p in zip(d["vals"], d["peaks"]):
                     rows.append({"Factor": lbl, "Value": v, "Peak tr(P1)": f"{p:.3e}"})
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # PDF Export
+    st.markdown("<div class='section-hdr'>📄 Export Report</div>",
+                unsafe_allow_html=True)
+    if st.button("📥  Download full report as PDF", use_container_width=True):
+        with st.spinner("⏳ Generating PDF..."):
+            try:
+                pdf_bytes = generate_pdf(
+                    log, chem, cname, n_cyc, Q_nom,
+                    v_rmse, s_rmse, p_peak, p_final, soh, cyc_pk,
+                    st.session_state.get("innovations", []),
+                    st.session_state.get("trP_history", []),
+                    st.session_state.get("noise_std", 0.010),
+                )
+                st.download_button(
+                    label="✅  Click here to save the PDF",
+                    data=pdf_bytes,
+                    file_name=f"BattSim_{cname.split('—')[0].strip().replace(' ','_')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except Exception as ex:
+                st.error(f"❌ PDF generation failed: {ex}")
 
     # CSV download
     st.markdown("---")
