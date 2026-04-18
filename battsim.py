@@ -347,9 +347,9 @@ def run_cosim(chem_name, n_cycles, c_rate, noise_std, prog, status):
 
     status.markdown(f"**[Co-Sim]** Running {N:,} time steps — DEKF online estimation ...")
     ckpt = max(1, N // 40)
+    innovations = []
+    trP_history = []
 
-innovations = []
-trP_history = []
 
 
     for k in range(N):
