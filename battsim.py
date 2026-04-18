@@ -712,7 +712,7 @@ with col_h2:
 st.markdown("---")
 
 
-# ================================================================
+# # ================================================================
 # Run simulation
 # ================================================================
 
@@ -721,19 +721,19 @@ if run_btn:
     pbar = st.progress(0)
     stat = st.empty()
     try:
-                log, Q_nom, chem, innovations, trP_history = run_cosim(
+        log, Q_nom, chem, innovations, trP_history = run_cosim(
             chem_name, n_cycles, c_rate, noise_std, pbar, stat
         )
         pbar.progress(100)
         stat.success("✅ Co-simulation complete.")
         st.session_state.update({
-            "log":       log,
-            "Q_nom":     Q_nom,
-            "chem":      chem,
-            "chem_name": chem_name,
-            "n_cyc":     n_cycles,
-            "noise_std": noise_std,
-                        "innovations":  innovations,
+            "log":          log,
+            "Q_nom":        Q_nom,
+            "chem":         chem,
+            "chem_name":    chem_name,
+            "n_cyc":        n_cycles,
+            "noise_std":    noise_std,
+            "innovations":  innovations,
             "trP_history":  trP_history,
         })
     except Exception as ex:
@@ -742,6 +742,7 @@ if run_btn:
         stat.error(f"❌ {ex}")
         with st.expander("Traceback"):
             st.code(traceback.format_exc())
+
 
 
 # ================================================================
