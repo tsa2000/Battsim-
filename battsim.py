@@ -584,9 +584,10 @@ def compute_stats(log, n_cyc, Q_nom):
         for c in range(n_cyc)
     ]
     return v_rmse, s_rmse, p_peak, p_final, soh, cyc_pk
-    def diagnose_simulation(innovations, trP_history, soh, noise_std):
-    diagnostics = []
 
+
+def diagnose_simulation(innovations, trP_history, soh, noise_std):
+    diagnostics = []
     innov_rms   = np.sqrt(np.mean(np.array(innovations)**2))
     innov_ratio = innov_rms / noise_std
     if innov_ratio > 3.0:
@@ -631,6 +632,7 @@ def compute_stats(log, n_cyc, Q_nom):
             f"SOH = {soh*100:.1f}% — within realistic range [65%–98%]."))
 
     return diagnostics
+
 
 
 
