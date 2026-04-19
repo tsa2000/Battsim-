@@ -247,7 +247,7 @@ class DEKF:
 
         self.x2  = np.array([[Q_nom], [R0]])
         self.P2  = np.diag([0.01, 1e-5])
-        self.Q2  = np.diag([1e-8, 1e-10])
+        self.Q2  = np.diag([1e-13, 1e-6])
         self.R2m = np.array([[noise_var * 4.0]])
 
         self.I2 = np.eye(2)
@@ -474,7 +474,7 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
         ["SOC RMSE",      f"{s_rmse:.4f} %",    "EKF-1"],
         ["Peak tr(P1)",   f"{p_peak:.3e}",       "UQ State"],
         ["Final tr(P1)",  f"{p_final:.3e}",      "UQ State"],
-        ["SOH (DEKF)",    f"{soh:.1f} %",        "EKF-2"],
+        ["SOH (DEKF)",    f"{soh:.3f} %",        "EKF-2"],
         ["Max V Error",   f"{np.abs(log['V_true']-log['V_est']).max()*1000:.2f} mV", "Peak"],
     ]
     t = Table(kpi_data, colWidths=[6*cm, 4.5*cm, 4*cm])
@@ -1077,7 +1077,7 @@ if "log" in st.session_state:
     kpi(k2, "SOC RMSE",      f"{s_rmse:.4f} %",    "EKF-1")
     kpi(k3, "Peak tr(P1)",   f"{p_peak:.2e}",       "UQ state")
     kpi(k4, "Final tr(P1)",  f"{p_final:.2e}",      "UQ state")
-    kpi(k5, "SOH (DEKF)",    f"{soh:.1f} %",        "EKF-2", warn=soh < 90)
+    kpi(k5, "SOH (DEKF)",    f"{soh:.3f} %",        "EKF-2", warn=soh < 90)
     kpi(k6, "Max V error",   f"{v_err_max:.1f} mV", "Peak")
 
         # Dashboard
