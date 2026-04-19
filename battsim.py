@@ -1051,10 +1051,11 @@ if "log" in st.session_state:
     n_cyc      = st.session_state["n_cyc"]
     sess_noise = st.session_state.get("noise_std", 0.010)
 
-v_rmse, s_rmse, p_peak, p_final, soh, cyc_pk = compute_stats(
-    log, n_cyc, Q_nom, st.session_state["Q_degraded"]
-)
-    v_err_max = np.abs(log["V_true"] - log["V_est"]).max() * 1000.0
+        v_rmse, s_rmse, p_peak, p_final, soh, cyc_pk = compute_stats(
+            log, n_cyc, Q_nom, st.session_state["Q_degraded"]
+        )
+        v_err_max = np.abs(log["V_true"] - log["V_est"]).max() * 1000.0
+
 
     # KPI row
     st.markdown("<div class='section-hdr'>📈 Key Performance Indicators</div>",
