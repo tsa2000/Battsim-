@@ -1018,8 +1018,7 @@ if run_btn:
             chem_name, n_cycles, c_rate, noise_std, pbar, stat
         )
         pbar.progress(100)
-        stat.success("✅ Co-simulation complete.")
-                st.session_state.update({
+        st.session_state.update({
             "log":          log,
             "Q_nom":        Q_nom,
             "Q_degraded":   Q_degraded,
@@ -1030,6 +1029,7 @@ if run_btn:
             "innovations":  innovations,
             "trP_history":  trP_history,
         })
+
     except Exception as ex:
         import traceback
         pbar.empty()
