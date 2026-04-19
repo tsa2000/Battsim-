@@ -379,7 +379,7 @@ def run_cosim(chem_name, n_cycles, c_rate, noise_std, prog, status):
             prog.progress(47 + int(48 * k / N))
 
     prog.progress(97)
-    return log, Q_nom, chem, innovations, trP_history
+    return log, Q_nom, Q_degraded, chem, innovations, trP_history
 
 
 # ================================================================
@@ -1014,7 +1014,7 @@ if run_btn:
     pbar = st.progress(0)
     stat = st.empty()
     try:
-        log, Q_nom, chem, innovations, trP_history = run_cosim(
+        log, Q_nom, Q_degraded, chem, innovations, trP_history = run_cosim(
             chem_name, n_cycles, c_rate, noise_std, pbar, stat
         )
         pbar.progress(100)
