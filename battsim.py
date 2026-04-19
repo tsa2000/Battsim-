@@ -238,7 +238,8 @@ class DEKF:
         self.ocv = make_ocv(chem)
         self.R1, self.C1 = R1, C1
         self.R2, self.C2 = R2, C2
-
+        self.Q_nom_degraded = Q_nom     
+    
         self.x1  = np.array([[soc0], [0.0], [0.0]])
         self.P1  = np.diag([1e-3, 1e-4, 1e-4])
         self.Q1  = np.diag([1e-8, 1e-6, 1e-6])
