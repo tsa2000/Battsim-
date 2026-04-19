@@ -872,7 +872,7 @@ def compute_stats(log, n_cyc, Q_nom, Q_degraded):
     s_rmse  = np.sqrt(np.mean((log["soc_true"] - log["soc_est"]) ** 2)) * 100.0
     p_peak  = log["P1_tr"].max()
     p_final = log["P1_tr"][-1]
-    soh = log["Q_est"][-1] / Q_degraded * 100.0
+    soh = log["Q_est"][-1] / Q_nom * 100.0
 
     cyc_pk = [
         log["P1_tr"][c * cl : min((c + 1) * cl, N)].max()
