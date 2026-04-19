@@ -167,6 +167,10 @@ def make_ocv(p):
 def docv_dsoc(ocv_fn, soc, h=1e-4):
     return (ocv_fn(soc + h) - ocv_fn(soc - h)) / (2.0 * h)
 
+def degraded_capacity(Q_init, n_cyc, c_rate, alpha=0.002, beta=1.3):
+    """Physical degradation — C-Rate stress + cycle count only."""
+    fade = alpha * (c_rate ** beta) * n_cyc
+    return Q_init * max(1.0 - fade, 0.65)
 
 # ================================================================
 # Machine 1 — PyBaMM DFN
@@ -331,12 +335,13 @@ def run_cosim(chem_name, n_cycles, c_rate, noise_std, prog, status):
     t, V_true, I_true, soc_true, Q_nom = run_dfn(
         chem["pybamm"], n_cycles, c_rate, prog, status
     )
+    Q_degraded = degraded_capacity(Q_nom, n_cycles, c_rate)
 
     status.markdown("**[Machine 2 — DEKF]** Initialising Dual EKF (2-RC + online param ID) ...")
     prog.progress(47)
 
     ekf = DEKF(
-        float(soc_true[0]), Q_nom,
+        float(soc_true[0]), Q_degraded,
         chem["R0"], chem["R1"], chem["C1"],
         chem["R2"], chem["C2"],
         noise_std ** 2, chem,
@@ -857,7 +862,7 @@ def tornado_chart(sens_data):
 # Summary statistics
 # ================================================================
 
-def compute_stats(log, n_cyc, Q_nom):
+def compute_stats(log, n_cyc, Q_nom, Q_degraded):
     N  = len(log["t"])
     cl = N // n_cyc
 
@@ -865,7 +870,7 @@ def compute_stats(log, n_cyc, Q_nom):
     s_rmse  = np.sqrt(np.mean((log["soc_true"] - log["soc_est"]) ** 2)) * 100.0
     p_peak  = log["P1_tr"].max()
     p_final = log["P1_tr"][-1]
-    soh     = log["Q_est"][-1] / Q_nom * 100.0
+    soh = log["Q_est"][-1] / Q_degraded * 100.0
 
     cyc_pk = [
         log["P1_tr"][c * cl : min((c + 1) * cl, N)].max()
@@ -1014,9 +1019,10 @@ if run_btn:
         )
         pbar.progress(100)
         stat.success("✅ Co-simulation complete.")
-        st.session_state.update({
+                st.session_state.update({
             "log":          log,
             "Q_nom":        Q_nom,
+            "Q_degraded":   Q_degraded,
             "chem":         chem,
             "chem_name":    chem_name,
             "n_cyc":        n_cycles,
