@@ -451,9 +451,11 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     # Header
     story.append(Paragraph("🔋 BattSim v4.1 — Simulation Report", S["title"]))
     story.append(Paragraph(
-        f"Generated: {datetime.now().strftime('%Y-%m-%d  %H:%M')}  |  "
-        f"Chemistry: {chem_name.split('—')[0].strip()}  |  Cycles: {n_cyc}",
-        S["sub"]))
+    f"Generated: {datetime.now().strftime('%Y-%m-%d  %H:%M')}  |  "
+    f"Chemistry: {chem_name.split('—')[0].strip()}  |  "
+    f"Cycles: {n_cyc}  |  C-Rate: {c_rate}C  |  "
+    f"Noise: {noise_std*1000:.0f} mV",
+    S["sub"]))
     story.append(HRFlowable(width="100%", thickness=1.5,
                              color=colors.HexColor('#00b4d8'), spaceAfter=10))
 
