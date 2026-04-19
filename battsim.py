@@ -305,8 +305,9 @@ class DEKF:
         if abs(S2[0, 0]) > 1e-15:
             K2 = P2p @ C2m.T / S2[0, 0]
             self.x2       = self.x2 + K2 * nu_2
-            self.x2[0, 0] = max(float(self.x2[0, 0]), 0.1)
-            self.x2[1, 0] = max(float(self.x2[1, 0]), 1e-4)
+            self.x2[0, 0] = max(float(self.x2[0, 0]), 0.1)              # حد أدنى ✅
+            self.x2[0, 0] = min(float(self.x2[0, 0]), self.Q_nom_degraded)  # حد أقصى ✅
+            self.x2[1, 0] = max(float(self.x2[1, 0]), 1e-4)             # R0 موجب ✅
             IKC2    = self.I2 - K2 @ C2m
             self.P2 = IKC2 @ P2p @ IKC2.T + K2 @ self.R2m @ K2.T
 
