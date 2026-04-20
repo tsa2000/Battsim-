@@ -167,17 +167,19 @@ def make_ocv(p):
 def docv_dsoc(ocv_fn, soc, h=1e-4):
     return (ocv_fn(soc + h) - ocv_fn(soc - h)) / (2.0 * h)
 
+
 def degraded_capacity(Q_init, n_cyc, c_rate, alpha=0.002, beta=1.3):
     """Physical degradation — C-Rate stress + cycle count only."""
     fade = alpha * (c_rate ** beta) * n_cyc
     return Q_init * max(1.0 - fade, 0.65)
 
+
 # ================================================================
 # Machine 1 — PyBaMM DFN
 # ================================================================
 
-@st.cache_resource                        
-def load_pybamm_model(pset_name):            
+@st.cache_resource
+def load_pybamm_model(pset_name):
     import pybamm
     model  = pybamm.lithium_ion.DFN()
     params = pybamm.ParameterValues(pset_name)
@@ -191,7 +193,6 @@ def run_dfn(pset_name, n_cycles, c_rate, prog, status):
     prog.progress(5)
 
     model, params = load_pybamm_model(pset_name)
-
 
     exp = pybamm.Experiment(
         [
@@ -238,8 +239,8 @@ class DEKF:
         self.ocv = make_ocv(chem)
         self.R1, self.C1 = R1, C1
         self.R2, self.C2 = R2, C2
-        self.Q_nom_degraded = Q_nom     
-    
+        self.Q_nom_degraded = Q_nom
+
         self.x1  = np.array([[soc0], [0.0], [0.0]])
         self.P1  = np.diag([1e-3, 1e-4, 1e-4])
         self.Q1  = np.diag([1e-8, 1e-6, 1e-6])
@@ -247,15 +248,22 @@ class DEKF:
 
         self.x2  = np.array([[Q_nom], [R0]])
         self.P2  = np.diag([0.01, 1e-5])
-        self.Q2  = np.diag([1e-13, 1e-6])
+
+        dOCV_init = abs(float(docv_dsoc(self.ocv, np.clip(soc0, 1e-4, 1 - 1e-4))))
+        q2_scale  = max(dOCV_init, 1e-3)
+        self.Q2   = np.diag([1e-13 * q2_scale, 1e-6])
+
         self.R2m = np.array([[noise_var * 4.0]])
+
+        self.Q_min = 0.65 * Q_nom
+        self.Q_max = Q_nom
 
         self.I2 = np.eye(2)
         self.I3 = np.eye(3)
 
     @property
     def Q_est(self):
-        return max(float(self.x2[0, 0]), 0.1)
+        return float(np.clip(self.x2[0, 0], self.Q_min, self.Q_max))
 
     @property
     def R0_est(self):
@@ -306,9 +314,8 @@ class DEKF:
         if abs(S2[0, 0]) > 1e-15:
             K2 = P2p @ C2m.T / S2[0, 0]
             self.x2       = self.x2 + K2 * nu_2
-            self.x2[0, 0] = max(float(self.x2[0, 0]), 0.1)              # حد أدنى ✅
-            self.x2[0, 0] = min(float(self.x2[0, 0]), self.Q_nom_degraded)  # حد أقصى ✅
-            self.x2[1, 0] = max(float(self.x2[1, 0]), 1e-4)             # R0 موجب ✅
+            self.x2[0, 0] = np.clip(float(self.x2[0, 0]), self.Q_min, self.Q_max)
+            self.x2[1, 0] = max(float(self.x2[1, 0]), 1e-4)
             IKC2    = self.I2 - K2 @ C2m
             self.P2 = IKC2 @ P2p @ IKC2.T + K2 @ self.R2m @ K2.T
 
@@ -341,6 +348,9 @@ def run_cosim(chem_name, n_cycles, c_rate, noise_std, prog, status):
 
     status.markdown("**[Machine 2 — DEKF]** Initialising Dual EKF (2-RC + online param ID) ...")
     prog.progress(47)
+
+    if "NCA" in chem_name and n_cycles > 5:
+        status.warning("⚠️ NCA + cycles > 5: flat OCV curve reduces EKF-2 observability — SOH estimate may drift.")
 
     ekf = DEKF(
         float(soc_true[0]), Q_degraded,
@@ -422,11 +432,12 @@ def sensitivity_analysis(chem_name, base_log, session_noise=0.010):
 
     return results
 
+
 # ================================================================
 # PDF Export
 # ================================================================
 
-def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
+def generate_pdf(log, chem, chem_name, n_cyc, Q_nom, c_rate,
                  v_rmse, s_rmse, p_peak, p_final, soh,
                  cyc_pk, innovations, trP_history, noise_std):
     import plotly.io as pio
@@ -455,26 +466,24 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
 
     story = []
 
-    # Header
     story.append(Paragraph("🔋 BattSim v4.1 — Simulation Report", S["title"]))
     story.append(Paragraph(
-    f"Generated: {datetime.now().strftime('%Y-%m-%d  %H:%M')}  |  "
-    f"Chemistry: {chem_name.split('—')[0].strip()}  |  "
-    f"Cycles: {n_cyc}  |  C-Rate: {c_rate}C  |  "
-    f"Noise: {noise_std*1000:.0f} mV",
-    S["sub"]))
+        f"Generated: {datetime.now().strftime('%Y-%m-%d  %H:%M')}  |  "
+        f"Chemistry: {chem_name.split('—')[0].strip()}  |  "
+        f"Cycles: {n_cyc}  |  C-Rate: {c_rate}C  |  "
+        f"Noise: {noise_std*1000:.0f} mV",
+        S["sub"]))
     story.append(HRFlowable(width="100%", thickness=1.5,
                              color=colors.HexColor('#00b4d8'), spaceAfter=10))
 
-    # KPI table
     story.append(Paragraph("Key Performance Indicators", S["h2"]))
     kpi_data = [
         ["Metric", "Value", "Filter"],
         ["Voltage RMSE",  f"{v_rmse:.3f} mV",  "EKF-1"],
-        ["SOC RMSE",      f"{s_rmse:.4f} %",    "EKF-1"],
-        ["Peak tr(P1)",   f"{p_peak:.3e}",       "UQ State"],
-        ["Final tr(P1)",  f"{p_final:.3e}",      "UQ State"],
-        ["SOH (DEKF)",    f"{soh:.3f} %",        "EKF-2"],
+        ["SOC RMSE",      f"{s_rmse:.4f} %",   "EKF-1"],
+        ["Peak tr(P1)",   f"{p_peak:.3e}",     "UQ State"],
+        ["Final tr(P1)",  f"{p_final:.3e}",    "UQ State"],
+        ["SOH (DEKF)",    f"{soh:.3f} %",      "EKF-2"],
         ["Max V Error",   f"{np.abs(log['V_true']-log['V_est']).max()*1000:.2f} mV", "Peak"],
     ]
     t = Table(kpi_data, colWidths=[6*cm, 4.5*cm, 4*cm])
@@ -493,20 +502,18 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     story.append(t)
     story.append(Spacer(1, 10))
 
-    # Diagnostics
     story.append(Paragraph("Simulation Diagnostics", S["h2"]))
-    diag = diagnose_simulation(innovations, trP_history, soh/100, noise_std)
+    diag = diagnose_simulation(innovations, trP_history, soh / 100.0, noise_std, s_rmse)
     for icon, title, msg in diag:
-        st_s = S["ok"] if icon=="✅" else (S["warn"] if icon=="🟡" else S["err"])
+        st_s = S["ok"] if icon == "✅" else (S["warn"] if icon == "🟡" else S["err"])
         story.append(Paragraph(f"<b>{icon} {title}</b> — {msg}", st_s))
     story.append(Spacer(1, 8))
 
-    # Cycle table
     story.append(Paragraph("Uncertainty Propagation per Cycle", S["h2"]))
     cyc_data = [["Cycle", "Peak tr(P1)", "Δ vs Cycle 1", "Status"]]
     for i, p in enumerate(cyc_pk):
-        delta  = "—" if i==0 else f"{(p-cyc_pk[0])/cyc_pk[0]*100:+.1f}%"
-        status = "Baseline" if i==0 else ("Growing" if p>cyc_pk[0]*1.05 else "Stable")
+        delta  = "—" if i == 0 else f"{(p-cyc_pk[0])/cyc_pk[0]*100:+.1f}%"
+        status = "Baseline" if i == 0 else ("Growing" if p > cyc_pk[0]*1.05 else "Stable")
         cyc_data.append([f"Cycle {i+1}", f"{p:.3e}", delta, status])
     ct = Table(cyc_data, colWidths=[3.5*cm, 4.5*cm, 4*cm, 3.5*cm])
     ct.setStyle(TableStyle([
@@ -524,7 +531,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     story.append(ct)
     story.append(Spacer(1, 10))
 
-    # Charts
     story.append(HRFlowable(width="100%", thickness=0.8,
                              color=colors.HexColor('#e2e8f0'), spaceAfter=8))
     story.append(Paragraph("Co-Simulation Plots", S["h2"]))
@@ -552,52 +558,50 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        import matplotlib.patches as mpatches
 
-        fig_mpl, ax = plt.subplots(figsize=(10, 3.5))
+        fig_mpl, axm = plt.subplots(figsize=(10, 3.5))
         fig_mpl.patch.set_facecolor('#f8fafc')
-        ax.set_facecolor('#f8fafc')
+        axm.set_facecolor('#f8fafc')
 
-        for trace in fig.data:
+        for trace in fig.
             x = list(trace.x) if trace.x is not None else []
             y = list(trace.y) if trace.y is not None else []
             if not x or not y:
                 continue
-            color  = trace.line.color  if hasattr(trace, 'line') and trace.line and trace.line.color else "#00b4d8"
-            lw     = trace.line.width  if hasattr(trace, 'line') and trace.line and trace.line.width else 1.5
-            ls     = "--"              if hasattr(trace, 'line') and trace.line and trace.line.dash == "dash" else "-"
+            color  = trace.line.color if hasattr(trace, 'line') and trace.line and trace.line.color else "#00b4d8"
+            lw     = trace.line.width if hasattr(trace, 'line') and trace.line and trace.line.width else 1.5
+            ls     = "--" if hasattr(trace, 'line') and trace.line and trace.line.dash == "dash" else "-"
             alpha  = getattr(trace, 'opacity', 1.0) or 1.0
             label  = trace.name if hasattr(trace, 'name') and trace.showlegend is not False else None
 
-            # skip fill-only traces
             if trace.mode == "lines" or trace.mode is None:
                 if trace.fill == "toself":
                     continue
-                ax.plot(x, y, color=color, linewidth=lw, linestyle=ls,
-                        alpha=alpha, label=label)
+                axm.plot(x, y, color=color, linewidth=lw, linestyle=ls,
+                         alpha=alpha, label=label)
             if hasattr(trace, 'fill') and trace.fill == "tozeroy":
-                ax.fill_between(x, y, alpha=0.15, color=color)
+                axm.fill_between(x, y, alpha=0.15, color=color)
 
         title_text = fig.layout.title.text if fig.layout.title and fig.layout.title.text else ""
-        ax.set_title(title_text, fontsize=10, color="#1a202c", pad=6)
+        axm.set_title(title_text, fontsize=10, color="#1a202c", pad=6)
 
         xaxis = fig.layout.xaxis
         yaxis = fig.layout.yaxis
         if xaxis and xaxis.title and xaxis.title.text:
-            ax.set_xlabel(xaxis.title.text, fontsize=8, color="#4a5568")
+            axm.set_xlabel(xaxis.title.text, fontsize=8, color="#4a5568")
         if yaxis and yaxis.title and yaxis.title.text:
-            ax.set_ylabel(yaxis.title.text, fontsize=8, color="#4a5568")
+            axm.set_ylabel(yaxis.title.text, fontsize=8, color="#4a5568")
 
-        ax.tick_params(colors="#4a5568", labelsize=7)
-        ax.grid(True, color="#e2e8f0", linewidth=0.5)
-        for spine in ax.spines.values():
+        axm.tick_params(colors="#4a5568", labelsize=7)
+        axm.grid(True, color="#e2e8f0", linewidth=0.5)
+        for spine in axm.spines.values():
             spine.set_edgecolor("#e2e8f0")
 
-        handles, labels = ax.get_legend_handles_labels()
+        handles, labels = axm.get_legend_handles_labels()
         if handles:
-            ax.legend(handles, labels, fontsize=7.5, framealpha=0.9,
-                      edgecolor="#cbd5e0", facecolor="white",
-                      loc="upper right", ncol=min(len(handles), 3))
+            axm.legend(handles, labels, fontsize=7.5, framealpha=0.9,
+                       edgecolor="#cbd5e0", facecolor="white",
+                       loc="upper right", ncol=min(len(handles), 3))
 
         plt.tight_layout(pad=0.5)
         img_buf = BytesIO()
@@ -606,8 +610,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
         img_buf.seek(0)
         return Image(img_buf, width=17.5*cm, height=7*cm)
 
-
-    # ① Voltage
     f1 = go.Figure()
     f1.add_trace(go.Scatter(x=t_h, y=log["V_meas"], mode="lines",
         name="Measured", line=dict(color="#a0aec0", width=0.6), opacity=0.5))
@@ -618,7 +620,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     f1.update_layout(title="① Terminal Voltage", xaxis=ax("Time [h]"), yaxis=ax("V [V]"), **CL)
     story.append(to_img(f1)); story.append(Spacer(1, 6))
 
-    # ② SOC
     f2 = go.Figure()
     f2.add_trace(go.Scatter(x=t_h, y=log["soc_true"]*100, mode="lines",
         name="SOC — DFN", line=dict(color=cc, width=2)))
@@ -627,7 +628,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     f2.update_layout(title="② State of Charge", xaxis=ax("Time [h]"), yaxis=ax("SOC [%]"), **CL)
     story.append(to_img(f2)); story.append(Spacer(1, 6))
 
-    # ③ tr(P1)
     f3 = go.Figure()
     f3.add_trace(go.Scatter(x=t_h, y=log["P1_tr"], mode="lines",
         line=dict(color="#2dc653", width=2),
@@ -635,7 +635,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     f3.update_layout(title="③ State Covariance tr(P1)", xaxis=ax("Time [h]"), yaxis=ax("tr(P1)"), **CL)
     story.append(to_img(f3)); story.append(Spacer(1, 6))
 
-    # ④ Param ID
     f4 = go.Figure()
     f4.add_trace(go.Scatter(x=t_h, y=log["Q_est"], mode="lines",
         name="Q_nom [Ah]", line=dict(color="#c77dff", width=2)))
@@ -644,7 +643,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     f4.update_layout(title="④ Online Parameter ID", xaxis=ax("Time [h]"), yaxis=ax("Value"), **CL)
     story.append(to_img(f4)); story.append(Spacer(1, 6))
 
-    # ⑤ V error
     f5 = go.Figure()
     f5.add_trace(go.Scatter(x=t_h, y=ve, mode="lines",
         line=dict(color="#f77f00", width=1.5),
@@ -652,7 +650,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     f5.update_layout(title="⑤ Voltage Error", xaxis=ax("Time [h]"), yaxis=ax("|Error| [mV]"), **CL)
     story.append(to_img(f5)); story.append(Spacer(1, 6))
 
-    # ⑥ SOC error
     f6 = go.Figure()
     f6.add_trace(go.Scatter(x=t_h, y=se, mode="lines",
         line=dict(color="#ef233c", width=1.5),
@@ -660,7 +657,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     f6.update_layout(title="⑥ SOC Error", xaxis=ax("Time [h]"), yaxis=ax("|Error| [%]"), **CL)
     story.append(to_img(f6)); story.append(Spacer(1, 6))
 
-    # ⑦ Per-cycle
     f7 = go.Figure()
     for c in range(n_cyc):
         s, e = c*cl, min((c+1)*cl, N)
@@ -671,7 +667,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
         xaxis=ax("Time in cycle [h]"), yaxis=ax("tr(P1)"), **CL)
     story.append(to_img(f7)); story.append(Spacer(1, 6))
 
-    # ⑧ tr(P2)
     f8 = go.Figure()
     f8.add_trace(go.Scatter(x=t_h, y=log["P2_tr"], mode="lines",
         line=dict(color="#00b4d8", width=2),
@@ -680,7 +675,6 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
         xaxis=ax("Time [h]"), yaxis=ax("tr(P2)"), **CL)
     story.append(to_img(f8))
 
-    # Footer
     story.append(Spacer(1, 14))
     story.append(HRFlowable(width="100%", thickness=0.8,
                              color=colors.HexColor('#e2e8f0'), spaceAfter=6))
@@ -692,6 +686,7 @@ def generate_pdf(log, chem, chem_name, n_cyc, Q_nom,
     doc.build(story)
     buf.seek(0)
     return buf.getvalue()
+
 
 # ================================================================
 # Color palette
@@ -725,7 +720,6 @@ LAYOUT_BASE = dict(
     margin=dict(t=60, b=36, l=58, r=24),
     height=400,
 )
-
 
 
 # ================================================================
@@ -881,10 +875,11 @@ def compute_stats(log, n_cyc, Q_nom, Q_degraded):
     return v_rmse, s_rmse, p_peak, p_final, soh, cyc_pk
 
 
-def diagnose_simulation(innovations, trP_history, soh, noise_std):
+def diagnose_simulation(innovations, trP_history, soh, noise_std, s_rmse):
     diagnostics = []
     innov_rms   = np.sqrt(np.mean(np.array(innovations)**2))
     innov_ratio = innov_rms / noise_std
+
     if innov_ratio > 3.0:
         diagnostics.append(("🔴", "EKF-1 Diverging",
             f"Innovation/Noise = {innov_ratio:.1f}× (limit: 3×). Noise overwhelms EKF-1 "
@@ -911,6 +906,17 @@ def diagnose_simulation(innovations, trP_history, soh, noise_std):
         diagnostics.append(("✅", "EKF-1 Converged",
             f"tr(P1) dropped to {trP_ratio:.1%} of initial — high confidence in state estimates."))
 
+    if s_rmse > 10.0:
+        diagnostics.append(("🔴", "High SOC Error",
+            f"SOC RMSE = {s_rmse:.2f}% > 10%. Poor OCV observability "
+            f"(flat curve — NCA/LFP at mid-SOC) or Coulomb counting drift."))
+    elif s_rmse > 5.0:
+        diagnostics.append(("🟡", "Moderate SOC Error",
+            f"SOC RMSE = {s_rmse:.2f}%. Acceptable for short cycles."))
+    else:
+        diagnostics.append(("✅", "SOC Accuracy Good",
+            f"SOC RMSE = {s_rmse:.2f}% — within BMS-grade tolerance."))
+
     if soh > 1.0:
         diagnostics.append(("🔴", "SOH Physically Impossible",
             f"SOH = {soh*100:.1f}% exceeds 100%. EKF-2 diverged — high noise caused it to "
@@ -920,15 +926,13 @@ def diagnose_simulation(innovations, trP_history, soh, noise_std):
             f"SOH = {soh*100:.1f}% — EKF-2 diverged in the opposite direction."))
     elif soh > 0.98:
         diagnostics.append(("🟡", "SOH Suspiciously High",
-            f"SOH = {soh*100:.1f}%. DFN (Chen2020) has no SEI degradation — "
-            f"Q_nom stays nearly constant regardless of cycle count. Model limitation, not real measurement."))
+            f"SOH = {soh*100:.1f}%. DFN-based runs here do not include explicit cycle-aging "
+            f"degradation, so Q_nom stays nearly constant and this reflects model limitation, not a real aged cell."))
     else:
         diagnostics.append(("✅", "SOH Physically Valid",
             f"SOH = {soh*100:.1f}% — within realistic range [65%–98%]."))
 
     return diagnostics
-
-
 
 
 # ================================================================
@@ -954,6 +958,9 @@ noise_db  = st.sidebar.select_slider(
 )
 noise_map = {"Low (5 mV)": 0.005, "Medium (10 mV)": 0.010, "High (30 mV)": 0.030}
 noise_std = noise_map[noise_db]
+
+if "NCA" in chem_name and n_cycles > 5:
+    st.sidebar.warning("⚠️ NCA > 5 cycles: flat OCV curve can weaken EKF-2 capacity observability.")
 
 st.sidebar.markdown("---")
 run_btn  = st.sidebar.button("▶  Run co-simulation",    use_container_width=True, type="primary")
@@ -1007,7 +1014,7 @@ with col_h2:
 st.markdown("---")
 
 
-# # ================================================================
+# ================================================================
 # Run simulation
 # ================================================================
 
@@ -1020,6 +1027,7 @@ if run_btn:
             chem_name, n_cycles, c_rate, noise_std, pbar, stat
         )
         pbar.progress(100)
+        stat.success("✅ Co-simulation complete.")
         st.session_state.update({
             "log":          log,
             "Q_nom":        Q_nom,
@@ -1028,215 +1036,83 @@ if run_btn:
             "chem_name":    chem_name,
             "n_cyc":        n_cycles,
             "noise_std":    noise_std,
+            "c_rate":       c_rate,
             "innovations":  innovations,
             "trP_history":  trP_history,
         })
+    except Exception as e:
+        stat.error(f"Simulation failed: {e}")
 
-    except Exception as ex:
-        import traceback
-        pbar.empty()
-        stat.error(f"❌ {ex}")
-        with st.expander("Traceback"):
-            st.code(traceback.format_exc())
-
-
-
-# ================================================================
-# Display results
-# ================================================================
+if sens_btn:
+    if "log" not in st.session_state:
+        st.warning("Run a co-simulation first.")
+    else:
+        sens = sensitivity_analysis(
+            st.session_state["chem_name"],
+            st.session_state["log"],
+            session_noise=st.session_state["noise_std"],
+        )
+        st.session_state["sens"] = sens
 
 if "log" in st.session_state:
-    log        = st.session_state["log"]
-    Q_nom      = st.session_state["Q_nom"]
-    chem       = st.session_state["chem"]
-    cname      = st.session_state["chem_name"]
-    n_cyc      = st.session_state["n_cyc"]
-    sess_noise = st.session_state.get("noise_std", 0.010)
+    log         = st.session_state["log"]
+    Q_nom       = st.session_state["Q_nom"]
+    Q_degraded  = st.session_state["Q_degraded"]
+    chem        = st.session_state["chem"]
+    chem_name   = st.session_state["chem_name"]
+    n_cyc       = st.session_state["n_cyc"]
+    noise_std_s = st.session_state["noise_std"]
+    c_rate_s    = st.session_state["c_rate"]
+    innovations = st.session_state["innovations"]
+    trP_history = st.session_state["trP_history"]
 
-    v_rmse, s_rmse, p_peak, p_final, soh, cyc_pk = compute_stats(
-        log, n_cyc, Q_nom, st.session_state["Q_degraded"]
+    v_rmse, s_rmse, p_peak, p_final, soh, cyc_pk = compute_stats(log, n_cyc, Q_nom, Q_degraded)
+
+    st.markdown("### 📈 Key Performance Indicators")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("VOLTAGE RMSE", f"{v_rmse:.2f} mV", help="EKF-1")
+        st.metric("PEAK TR(P1)", f"{p_peak:.2e}", help="UQ state")
+    with c2:
+        st.metric("SOC RMSE", f"{s_rmse:.4f} %", help="EKF-1")
+        st.metric("FINAL TR(P1)", f"{p_final:.2e}", help="UQ state")
+    with c3:
+        st.metric("SOH (DEKF)", f"{soh:.3f} %", help="EKF-2")
+        st.metric("MAX V ERROR", f"{np.abs(log['V_true']-log['V_est']).max()*1000:.1f} mV", help="Peak")
+
+    st.markdown("### 🔬 Simulation Diagnostics")
+    for icon, title, msg in diagnose_simulation(innovations, trP_history, soh / 100.0, noise_std_s, s_rmse):
+        if icon == "✅":
+            st.success(f"{icon} {title}\n\n{msg}")
+        elif icon == "🟡":
+            st.warning(f"{icon} {title}\n\n{msg}")
+        else:
+            st.error(f"{icon} {title}\n\n{msg}")
+
+    render_dashboard(log, chem, n_cyc, chem_name)
+
+    if "sens" in st.session_state:
+        st.markdown("### 📊 Sensitivity Analysis")
+        st.plotly_chart(tornado_chart(st.session_state["sens"]), use_container_width=True)
+
+    st.markdown("### 📄 Export")
+    pdf_bytes = generate_pdf(
+        log, chem, chem_name, n_cyc, Q_nom, c_rate_s,
+        v_rmse, s_rmse, p_peak, p_final, soh,
+        cyc_pk, innovations, trP_history, noise_std_s
     )
-    v_err_max = np.abs(log["V_true"] - log["V_est"]).max() * 1000.0
-
-    # KPI row
-    st.markdown("<div class='section-hdr'>📈 Key Performance Indicators</div>",
-                unsafe_allow_html=True)
-
-    def kpi(col, label, val, sub="", warn=False):
-        badge_cls = "badge-warn" if warn else "badge-ok"
-        badge     = f"<span class='{badge_cls}'>{sub}</span>" if sub else ""
-        col.markdown(f"""
-        <div class='metric-card'>
-          <div class='metric-label'>{label}</div>
-          <div class='metric-value'>{val}</div>
-          {badge}
-        </div>""", unsafe_allow_html=True)
-
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    kpi(k1, "Voltage RMSE",  f"{v_rmse:.2f} mV",  "EKF-1")
-    kpi(k2, "SOC RMSE",      f"{s_rmse:.4f} %",    "EKF-1")
-    kpi(k3, "Peak tr(P1)",   f"{p_peak:.2e}",       "UQ state")
-    kpi(k4, "Final tr(P1)",  f"{p_final:.2e}",      "UQ state")
-    kpi(k5, "SOH (DEKF)",    f"{soh:.3f} %",        "EKF-2", warn=soh < 90)
-    kpi(k6, "Max V error",   f"{v_err_max:.1f} mV", "Peak")
-
-        # Dashboard
-    st.markdown("<div class='section-hdr'>🔬 Simulation Diagnostics</div>",
-                unsafe_allow_html=True)
-    _innov = st.session_state.get("innovations", [])
-    _trP   = st.session_state.get("trP_history", [])
-    if _innov and _trP:
-        diag = diagnose_simulation(_innov, _trP, soh / 100, sess_noise)
-        for icon, title, msg in diag:
-            color  = "rgba(239,35,60,0.1)"  if icon=="🔴" else "rgba(247,127,0,0.1)" if icon=="🟡" else "rgba(45,198,83,0.1)"
-            border = "#ef233c" if icon=="🔴" else "#f77f00" if icon=="🟡" else "#2dc653"
-            st.markdown(f"""
-            <div style='background:{color};border-left:3px solid {border};
-                        padding:10px 14px;border-radius:8px;margin-bottom:8px;'>
-                <b style='color:{border}'>{icon} {title}</b><br>
-                <span style='color:#a0aec0;font-size:0.85rem'>{msg}</span>
-            </div>""", unsafe_allow_html=True)
-
-    st.markdown("<div class='section-hdr'>📊 Co-simulation Dashboard</div>",
-                unsafe_allow_html=True)
-    render_dashboard(log, chem, n_cyc, cname)
-
-
-    # Cycle UQ table
-    st.markdown("<div class='section-hdr'>🔁 Uncertainty Propagation per Cycle</div>",
-                unsafe_allow_html=True)
-
-    df_cyc = pd.DataFrame({
-        "Cycle": [f"Cycle {i + 1}" for i in range(n_cyc)],
-        "Peak tr(P1)": [f"{p:.3e}" for p in cyc_pk],
-        "Δ vs Cycle 1": [
-            "—" if i == 0
-            else f"{(p - cyc_pk[0]) / cyc_pk[0] * 100:+.1f}%"
-            for i, p in enumerate(cyc_pk)
-        ],
-        "Status": [
-            "🟢 Baseline" if i == 0
-            else ("🟡 Growing" if p > cyc_pk[0] * 1.05 else "🟢 Stable")
-            for i, p in enumerate(cyc_pk)
-        ],
-    })
-    st.dataframe(df_cyc, use_container_width=True, hide_index=True)
-
-    trend = cyc_pk[-1] / cyc_pk[0] if n_cyc > 1 else 1.0
-    if trend > 1.05:
-        st.warning(
-            f"⚠️ **tr(P1) grew {(trend - 1) * 100:.1f}%** over {n_cyc} cycles — "
-            "the model-reality gap is widening, consistent with ongoing degradation."
-        )
-    else:
-        st.success("✅ **tr(P1) is stable** — the DEKF is tracking well across all cycles.")
-
-    # Sensitivity analysis
-    if sens_btn or st.session_state.get("sens_done"):
-        st.markdown(
-            "<div class='section-hdr'>🌪️ Sensitivity Analysis — Observer Tuning</div>",
-            unsafe_allow_html=True,
-        )
-        with st.spinner("Running observer-parameter sweeps ..."):
-            sens = sensitivity_analysis(cname, log, sess_noise)
-            st.session_state["sens_done"] = True
-
-        st.plotly_chart(tornado_chart(sens), use_container_width=True)
-
-        with st.expander("📋 Sensitivity raw data"):
-            rows = []
-            for lbl, d in sens.items():
-                for v, p in zip(d["vals"], d["peaks"]):
-                    rows.append({"Factor": lbl, "Value": v, "Peak tr(P1)": f"{p:.3e}"})
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-    # PDF Export
-    st.markdown("<div class='section-hdr'>📄 Export Report</div>",
-                unsafe_allow_html=True)
-    if st.button("📥  Download full report as PDF", use_container_width=True):
-        with st.spinner("⏳ Generating PDF..."):
-            try:
-                pdf_bytes = generate_pdf(
-                    log, chem, cname, n_cyc, Q_nom,
-                    v_rmse, s_rmse, p_peak, p_final, soh, cyc_pk,
-                    st.session_state.get("innovations", []),
-                    st.session_state.get("trP_history", []),
-                    st.session_state.get("noise_std", 0.010),
-                )
-                st.download_button(
-                    label="✅  Click here to save the PDF",
-                    data=pdf_bytes,
-                    file_name=f"BattSim_{cname.split('—')[0].strip().replace(' ','_')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True,
-                )
-            except Exception as ex:
-                st.error(f"❌ PDF generation failed: {ex}")
-
-    # CSV download
-    st.markdown("---")
-    df_full = pd.DataFrame({
-        "Time [h]":       log["t"] / 3600.0,
-        "V_true [V]":     log["V_true"],
-        "V_measured [V]": log["V_meas"],
-        "V_DEKF [V]":     log["V_est"],
-        "SOC_true":       log["soc_true"],
-        "SOC_DEKF":       log["soc_est"],
-        "tr(P1)":         log["P1_tr"],
-        "P1_soc":         log["P1_soc"],
-        "Q_est [Ah]":     log["Q_est"],
-        "R0_est [Ohm]":   log["R0_est"],
-        "tr(P2)":         log["P2_tr"],
-    })
-    buf = io.BytesIO()
-    df_full.to_csv(buf, index=False)
-    buf.seek(0)
     st.download_button(
-        "⬇️  Download full results (CSV)",
-        buf,
-        file_name="battsim_v4_1_results.csv",
-        mime="text/csv",
+        "⬇️ Download PDF Report",
+        data=pdf_bytes,
+        file_name="battsim_report.pdf",
+        mime="application/pdf",
         use_container_width=True,
     )
 
-else:
-    st.markdown("""
-    <div style='text-align:center;padding:3rem 1rem;color:#8b949e'>
-      <div style='font-size:4rem;margin-bottom:1rem'>🔋</div>
-      <h3 style='color:#c9d1d9'>Ready to run</h3>
-      <p>Select a chemistry and parameters in the sidebar,
-         then click <b>Run co-simulation</b>.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.code("""
-Machine 1 — PyBaMM DFN          noisy V, I        Machine 2 — DEKF (2-RC)
-  Doyle-Fuller-Newman       ─────────────────►   EKF-1  x = [SOC, V1, V2]
-  Chen2020 / Prada2013                           EKF-2  θ = [Q_nom, R0]
-  Ecker2015                                      Chain-rule Jacobian dV/dQ
-  (ground truth)                                 Exact Δt via np.diff
-                                                 Session-consistent sensitivity
-                                                 UQ: tr(P1) / tr(P2) per cycle
-    """, language="")
-
-
-# ================================================================
-# Footer
-# ================================================================
-
 st.markdown("""
-<div class='footer-bar'>
-  <span class='app-name'>🔋 BattSim v4.1</span>
-  &nbsp;·&nbsp; DFN ↔ DEKF · Research Grade
-  &nbsp;·&nbsp; Multi-chemistry · UQ · Sensitivity Analysis
-  <br><br>
-  Designed &amp; Developed by &nbsp;
-  <span class='author'>Eng. Thaer Abushawar</span>
-  &nbsp;·&nbsp;
-  <a href='mailto:Thaer199@gmail.com'>Thaer199@gmail.com</a>
-  <br>
-  <span style='font-size:0.70rem;color:#484f58;margin-top:4px;display:block'>
-    Plett (2004) · Chen et al. (2020) · Coman et al. (2022)
-  </span>
+<div class="footer-bar">
+  <span class="app-name">BattSim v4.1</span> ·
+  <span class="author">Eng. Thaer Abushawar</span> ·
+  DFN ↔ DEKF · Research-grade battery co-simulation
 </div>
 """, unsafe_allow_html=True)
