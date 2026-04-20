@@ -310,12 +310,12 @@ class DEKF:
                 - current * self.R0_est)
         nu_2 = v_meas - vh_2
 
-        S2 = C2m @ P2p @ C2m.T + self.R2m
+          S2 = C2m @ P2p @ C2m.T + self.R2m
         if abs(S2[0, 0]) > 1e-15 and abs(current) > 0.01:
             K2 = P2p @ C2m.T / S2[0, 0]
             self.x2       = self.x2 + K2 * nu_2
             self.x2[0, 0] = np.clip(float(self.x2[0, 0]), self.Q_min, self.Q_max)
-            self.x2[1, 0] = np.clip(float(self.x2[1, 0]), 1e-4, 0.15)  # ← أضف حد أقصى 150mΩ
+            self.x2[1, 0] = np.clip(float(self.x2[1, 0]), 1e-4, 0.15)
             IKC2    = self.I2 - K2 @ C2m
             self.P2 = IKC2 @ P2p @ IKC2.T + K2 @ self.R2m @ K2.T
 
