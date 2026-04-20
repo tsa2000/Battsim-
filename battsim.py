@@ -311,7 +311,7 @@ class DEKF:
         nu_2 = v_meas - vh_2
 
         S2 = C2m @ P2p @ C2m.T + self.R2m
-        if abs(S2[0, 0]) > 1e-15:
+        if abs(S2[0, 0]) > 1e-15 and abs(current) > 0.01:  # ← أضف هذا الشرط فقط
             K2 = P2p @ C2m.T / S2[0, 0]
             self.x2       = self.x2 + K2 * nu_2
             self.x2[0, 0] = np.clip(float(self.x2[0, 0]), self.Q_min, self.Q_max)
