@@ -310,7 +310,9 @@ class DEKF:
                 - current * self.R0_est)
         nu_2 = v_meas - vh_2
 
-          S2 = C2m @ P2p @ C2m.T + self.R2m
+        nu_2 = v_meas - vh_2
+
+        S2 = C2m @ P2p @ C2m.T + self.R2m
         if abs(S2[0, 0]) > 1e-15 and abs(current) > 0.01:
             K2 = P2p @ C2m.T / S2[0, 0]
             self.x2       = self.x2 + K2 * nu_2
@@ -333,6 +335,7 @@ class DEKF:
             self.R0_est,
             float(np.trace(self.P2)),
         )
+
 
 
 # ================================================================
