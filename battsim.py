@@ -265,7 +265,7 @@ def ekf_2rc(t_s, current, voltage_true, soc_true, chemistry, noise_mv=8.0, qn_ah
         v_est[k] = y_pred + float((h @ (x - x_pred).reshape(-1, 1))[0, 0])
         trp[k] = float(np.trace(P))
         sig_soc[k] = math.sqrt(max(P[0, 0], 0))
-        var_v = float(h @ P @ h.T + R)
+        var_v = float((h @ P @ h.T)[0, 0] + R[0, 0])
         sig_v[k] = math.sqrt(max(var_v, 0))
 
     return z, x_hist[:, 0], v_est, sig_soc, sig_v, trp
