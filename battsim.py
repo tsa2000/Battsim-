@@ -757,6 +757,303 @@ for kind, msg in msgs:
     st.markdown(f"<div class='{css}'>{icon} {msg}</div>", unsafe_allow_html=True)
 
 # ================================================================
+# MACHINE 3 — Physics-Informed Neural Network (PINN) Corrector
+# ================================================================
+st.markdown("---")
+st.markdown("""
+<div class='machine-box'>
+  <div class='machine-title' style='color:#c77dff'>
+    🧠 Machine 3 — PINN Residual Corrector
+  </div>
+  <small style='color:#8b949e'>
+    Learns the DFN→ECM model mismatch and corrects EKF estimates online.
+    Inputs: [I, SOC_est, t_norm] · Target: residual = V_true − V_ecm
+  </small>
+</div>
+""", unsafe_allow_html=True)
+
+pinn_col1, pinn_col2, pinn_col3, pinn_col4 = st.columns(4)
+with pinn_col1:
+    pinn_epochs  = st.slider("Training Epochs", 100, 2000, 500, step=100)
+with pinn_col2:
+    pinn_hidden  = st.select_slider("Hidden Layers",
+        options=[1, 2, 3, 4], value=2)
+with pinn_col3:
+    pinn_neurons = st.select_slider("Neurons/Layer",
+        options=[16, 32, 64, 128], value=64)
+with pinn_col4:
+    pinn_lambda  = st.select_slider("Physics λ",
+        options=[0.0, 0.01, 0.1, 1.0], value=0.1)
+
+if st.button("🚀  Train PINN Corrector", type="primary", use_container_width=False):
+
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+
+    # ── Build training data from current simulation log ───────
+    t_norm  = (log["t"] - log["t"].min()) / (log["t"].max() - log["t"].min())
+    ocv_fn  = make_ocv(chem)
+    V_ocv   = np.array([float(ocv_fn(np.clip(s,0,1))) for s in log["soc_est"]])
+    V_ecm   = V_ocv - log["I_true"] * chem["R0"]
+    residual = log["V_true"] - V_ecm
+
+    # Features: [t_norm, I, SOC_est, V_ecm_norm]
+    V_ecm_norm = (V_ecm - V_ecm.mean()) / (V_ecm.std() + 1e-8)
+    I_norm     = (log["I_true"] - log["I_true"].mean()) / (log["I_true"].std() + 1e-8)
+    res_mean   = residual.mean()
+    res_std    = residual.std() + 1e-8
+    res_norm   = (residual - res_mean) / res_std
+
+    X = np.stack([
+        t_norm,
+        I_norm,
+        log["soc_est"],
+        V_ecm_norm,
+    ], axis=1).astype(np.float32)
+
+    y = res_norm.astype(np.float32).reshape(-1, 1)
+
+    X_t = torch.tensor(X)
+    y_t = torch.tensor(y)
+
+    # ── PINN Architecture ─────────────────────────────────────
+    class PINN(nn.Module):
+        def __init__(self, hidden, neurons):
+            super().__init__()
+            layers = [nn.Linear(4, neurons), nn.Tanh()]
+            for _ in range(hidden - 1):
+                layers += [nn.Linear(neurons, neurons), nn.Tanh()]
+            layers += [nn.Linear(neurons, 1)]
+            self.net = nn.Sequential(*layers)
+
+        def forward(self, x):
+            return self.net(x)
+
+    model_pinn = PINN(pinn_hidden, pinn_neurons)
+    optimizer  = optim.Adam(model_pinn.parameters(), lr=1e-3)
+    scheduler  = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=pinn_epochs, eta_min=1e-5)
+
+    # ── Training loop ─────────────────────────────────────────
+    loss_hist  = []
+    phys_hist  = []
+    prog3      = st.progress(0)
+    status3    = st.empty()
+
+    dt_tensor  = torch.tensor(10.0)
+    Q_tensor   = torch.tensor(float(Q_nom) * 3600.0)
+
+    for epoch in range(pinn_epochs):
+        model_pinn.train()
+        optimizer.zero_grad()
+
+        # Data loss
+        pred      = model_pinn(X_t)
+        data_loss = nn.MSELoss()(pred, y_t)
+
+        # Physics loss: d(SOC)/dt ≈ -I/Q
+        # Approximate with finite difference on SOC_est
+        soc_pred  = torch.tensor(log["soc_est"].astype(np.float32))
+        dsoc_dt   = (soc_pred[1:] - soc_pred[:-1]) / 10.0
+        i_over_q  = torch.tensor(
+            (log["I_true"][:-1] / (Q_nom * 3600)).astype(np.float32))
+        phys_loss = nn.MSELoss()(dsoc_dt, -i_over_q)
+
+        # Total loss
+        loss = data_loss + pinn_lambda * phys_loss
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+
+        loss_hist.append(float(data_loss))
+        phys_hist.append(float(phys_loss))
+
+        if epoch % max(1, pinn_epochs // 20) == 0:
+            prog3.progress((epoch + 1) / pinn_epochs)
+            status3.markdown(
+                f"<div class='data-link'>🧠 Epoch {epoch+1}/{pinn_epochs} — "
+                f"Data Loss: {float(data_loss):.5f} | "
+                f"Physics Loss: {float(phys_loss):.6f}</div>",
+                unsafe_allow_html=True)
+
+    prog3.empty()
+    status3.empty()
+
+    # ── PINN Inference ────────────────────────────────────────
+    model_pinn.eval()
+    with torch.no_grad():
+        res_pred_norm = model_pinn(X_t).numpy().ravel()
+
+    res_predicted = res_pred_norm * res_std + res_mean
+    V_corrected   = V_ecm + res_predicted
+
+    # Corrected SOC via OCV inversion (simple lookup)
+    ocv_arr = np.array(chem["ocv_lut"])
+    soc_arr = np.array(chem["soc_lut"])
+    soc_corrected = np.interp(
+        np.clip(V_corrected, ocv_arr.min(), ocv_arr.max()),
+        ocv_arr, soc_arr)
+
+    # ── Metrics comparison ────────────────────────────────────
+    v_rmse_ecm   = np.sqrt(np.mean((log["V_true"] - V_ecm)**2)) * 1000
+    v_rmse_pinn  = np.sqrt(np.mean((log["V_true"] - V_corrected)**2)) * 1000
+    s_rmse_ekf   = np.sqrt(np.mean((log["soc_true"] - log["soc_est"])**2)) * 100
+    s_rmse_pinn  = np.sqrt(np.mean((log["soc_true"] - soc_corrected)**2)) * 100
+    improv_v     = (v_rmse_ecm - v_rmse_pinn) / v_rmse_ecm * 100
+    improv_s     = (s_rmse_ekf - s_rmse_pinn) / s_rmse_ekf * 100
+
+    # Store in session
+    st.session_state["pinn_V_corrected"]   = V_corrected
+    st.session_state["pinn_soc_corrected"] = soc_corrected
+    st.session_state["pinn_loss_hist"]     = loss_hist
+    st.session_state["pinn_phys_hist"]     = phys_hist
+    st.session_state["pinn_metrics"] = {
+        "v_rmse_ecm":  v_rmse_ecm,
+        "v_rmse_pinn": v_rmse_pinn,
+        "s_rmse_ekf":  s_rmse_ekf,
+        "s_rmse_pinn": s_rmse_pinn,
+        "improv_v":    improv_v,
+        "improv_s":    improv_s,
+    }
+
+# ── Show results if trained ───────────────────────────────────
+if "pinn_V_corrected" in st.session_state:
+
+    V_corrected   = st.session_state["pinn_V_corrected"]
+    soc_corrected = st.session_state["pinn_soc_corrected"]
+    loss_hist     = st.session_state["pinn_loss_hist"]
+    phys_hist     = st.session_state["pinn_phys_hist"]
+    m             = st.session_state["pinn_metrics"]
+
+    # ── KPI row ───────────────────────────────────────────────
+    st.markdown("#### 📊 Correction Results")
+    pk1, pk2, pk3, pk4 = st.columns(4)
+
+    def kpi_delta(col, label, before, after, unit):
+        delta = after - before
+        sign  = "▲" if delta > 0 else "▼"
+        color = C_GRN if delta < 0 else C_RED
+        col.markdown(f"""
+        <div class='metric-card'>
+          <div class='metric-label'>{label}</div>
+          <div class='metric-value' style='color:{color}'>{after:.3f}</div>
+          <div class='metric-unit'>{unit}
+            <span style='color:{color}'>{sign}{abs(delta):.3f}</span>
+            vs EKF {before:.3f}
+          </div>
+        </div>""", unsafe_allow_html=True)
+
+    kpi_delta(pk1, "V RMSE (PINN)",
+              m["v_rmse_ecm"], m["v_rmse_pinn"], "mV")
+    kpi_delta(pk2, "SOC RMSE (PINN)",
+              m["s_rmse_ekf"], m["s_rmse_pinn"], "%")
+    pk3.markdown(f"""
+    <div class='metric-card'>
+      <div class='metric-label'>Voltage Improvement</div>
+      <div class='metric-value' style='color:{C_GRN}'>{m["improv_v"]:.1f}%</div>
+      <div class='metric-unit'>vs ECM baseline</div>
+    </div>""", unsafe_allow_html=True)
+    pk4.markdown(f"""
+    <div class='metric-card'>
+      <div class='metric-label'>SOC Improvement</div>
+      <div class='metric-value' style='color:{C_GRN}'>{m["improv_s"]:.1f}%</div>
+      <div class='metric-unit'>vs EKF baseline</div>
+    </div>""", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ── 4 charts ──────────────────────────────────────────────
+    pc1, pc2 = st.columns(2)
+
+    with pc1:
+        f = go.Figure()
+        f.add_trace(go.Scatter(x=t_h, y=log["V_true"], mode="lines",
+            name="V_true (DFN)", line=dict(color=cc, width=2.2)))
+        f.add_trace(go.Scatter(x=t_h, y=log["V_est"], mode="lines",
+            name=f"V_est EKF ({v_rmse:.1f} mV)",
+            line=dict(color=C_ORG, width=1.5, dash="dash")))
+        f.add_trace(go.Scatter(x=t_h, y=V_corrected, mode="lines",
+            name=f"V_PINN ({m['v_rmse_pinn']:.1f} mV)",
+            line=dict(color=C_PUR, width=2.0)))
+        f.update_layout(
+            title="① Voltage: DFN vs EKF vs PINN Corrected",
+            xaxis=ax("Time [h]"), yaxis=ax("Voltage [V]"),
+            **BASE_LAYOUT)
+        st.plotly_chart(f, use_container_width=True)
+
+    with pc2:
+        f = go.Figure()
+        f.add_trace(go.Scatter(x=t_h, y=log["soc_true"]*100, mode="lines",
+            name="SOC_true (DFN)", line=dict(color=cc, width=2.2)))
+        f.add_trace(go.Scatter(x=t_h, y=log["soc_est"]*100, mode="lines",
+            name=f"SOC EKF ({s_rmse:.2f}%)",
+            line=dict(color=C_ORG, width=1.5, dash="dash")))
+        f.add_trace(go.Scatter(x=t_h, y=soc_corrected*100, mode="lines",
+            name=f"SOC PINN ({m['s_rmse_pinn']:.2f}%)",
+            line=dict(color=C_PUR, width=2.0)))
+        f.update_layout(
+            title="② SOC: DFN vs EKF vs PINN Corrected",
+            xaxis=ax("Time [h]"), yaxis=ax("SOC [%]"),
+            **BASE_LAYOUT)
+        st.plotly_chart(f, use_container_width=True)
+
+    pc3, pc4 = st.columns(2)
+
+    with pc3:
+        f = go.Figure()
+        f.add_trace(go.Scatter(
+            x=list(range(1, len(loss_hist)+1)), y=loss_hist,
+            mode="lines", name="Data Loss",
+            line=dict(color=C_PUR, width=2)))
+        f.add_trace(go.Scatter(
+            x=list(range(1, len(phys_hist)+1)), y=phys_hist,
+            mode="lines", name="Physics Loss",
+            line=dict(color=C_ORG, width=1.5, dash="dash")))
+        f.update_layout(
+            title="③ PINN Training Loss Convergence",
+            xaxis=ax("Epoch"), yaxis=ax("Loss", ".2e"),
+            **BASE_LAYOUT)
+        st.plotly_chart(f, use_container_width=True)
+
+    with pc4:
+        ocv_fn  = make_ocv(chem)
+        V_ocv   = np.array([float(ocv_fn(np.clip(s,0,1))) for s in log["soc_est"]])
+        V_ecm_b = V_ocv - log["I_true"] * chem["R0"]
+        res_true = log["V_true"] - V_ecm_b
+        res_pred = V_corrected - V_ecm_b
+        f = go.Figure()
+        f.add_trace(go.Scatter(x=t_h, y=res_true*1000, mode="lines",
+            name="True Residual (DFN - ECM)",
+            line=dict(color=cc, width=1.8)))
+        f.add_trace(go.Scatter(x=t_h, y=res_pred*1000, mode="lines",
+            name="PINN Predicted Residual",
+            line=dict(color=C_PUR, width=1.8, dash="dash")))
+        f.update_layout(
+            title="④ Residual: True vs PINN Prediction",
+            xaxis=ax("Time [h]"), yaxis=ax("Residual [mV]"),
+            **BASE_LAYOUT)
+        st.plotly_chart(f, use_container_width=True)
+
+    # ── Architecture summary ──────────────────────────────────
+    st.markdown("#### 🧠 PINN Architecture")
+    st.code(f"""
+Input Layer    : 4 features [t_norm, I_norm, SOC_est, V_ecm_norm]
+Hidden Layers  : {pinn_hidden} × {pinn_neurons} neurons (Tanh activation)
+Output Layer   : 1 → residual correction [mV]
+Physics Loss   : d(SOC)/dt = -I / Q_nom  (Coulomb counting constraint)
+Total Loss     : L = MSE(data) + {pinn_lambda} × MSE(physics)
+Optimizer      : Adam + Cosine Annealing LR
+Epochs         : {pinn_epochs}
+─────────────────────────────────────────────────
+ECM Baseline V RMSE  : {m['v_rmse_ecm']:.2f} mV
+PINN Corrected RMSE  : {m['v_rmse_pinn']:.2f} mV
+Improvement          : {m['improv_v']:.1f}%
+EKF SOC RMSE         : {m['s_rmse_ekf']:.3f}%
+PINN SOC RMSE        : {m['s_rmse_pinn']:.3f}%
+""", language="")
+
+# ================================================================
 # PDF Report — ReportLab (true PDF, embedded charts)
 # ================================================================
 st.markdown("---")
