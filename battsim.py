@@ -757,434 +757,469 @@ for kind, msg in msgs:
     st.markdown(f"<div class='{css}'>{icon} {msg}</div>", unsafe_allow_html=True)
 
 # ================================================================
-# PDF
+# PDF Report — ReportLab (true PDF, embedded charts)
 # ================================================================
 st.markdown("---")
 
-def build_charts_b64(log, t_h, sigma, cyc_pk, noise_std, n_cycles, cl, N,
-                     v_rmse, s_rmse, chem):
-    """Generate all 5 report charts as base64-encoded PNG strings."""
-    import io, base64
+def generate_pdf_report(log, t_h, sigma, cyc_pk, noise_std, n_cycles, cl, N,
+                         v_rmse, s_rmse, chem, chem_name, Q_nom, protocol_label,
+                         c_rate, p0_scale, q_scale, r_scale, last_Ck, last_Kk, msgs):
+    import io
     import plotly.graph_objects as go
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        Image as RLImage, HRFlowable, PageBreak, KeepTogether
+    )
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
+    W_PAGE, H_PAGE = A4
+    CW = W_PAGE - 36 * mm
+
+    # ── Colours ──────────────────────────────────────────────
+    TEAL  = colors.HexColor("#00b4d8")
+    NAVY  = colors.HexColor("#0f172a")
+    SLATE = colors.HexColor("#64748b")
+    LIGHT = colors.HexColor("#f8fafc")
+    GRN_B = colors.HexColor("#dcfce7")
+    YLW_B = colors.HexColor("#fef9c3")
+    RED_B = colors.HexColor("#fee2e2")
+    GRN_T = colors.HexColor("#166534")
+    YLW_T = colors.HexColor("#854d0e")
+    RED_T = colors.HexColor("#991b1b")
+
+    # ── Paragraph styles ─────────────────────────────────────
+    def S(name, **kw): return ParagraphStyle(name, **kw)
+
+    sCover   = S("cov",  fontSize=26, textColor=NAVY,  fontName="Helvetica-Bold",
+                         alignment=TA_CENTER, spaceAfter=6)
+    sSubCov  = S("sub",  fontSize=13, textColor=TEAL,  fontName="Helvetica",
+                         alignment=TA_CENTER, spaceAfter=4)
+    sH2      = S("h2",   fontSize=13, textColor=NAVY,  fontName="Helvetica-Bold",
+                         spaceBefore=10, spaceAfter=5, leftIndent=8)
+    sBody    = S("bd",   fontSize=9,  textColor=colors.HexColor("#374151"),
+                         fontName="Helvetica", leading=14, spaceAfter=3)
+    sCaption = S("cap",  fontSize=8,  textColor=SLATE, fontName="Helvetica-Oblique",
+                         alignment=TA_CENTER, spaceAfter=4, spaceBefore=2)
+    sSmall   = S("sm",   fontSize=7.5,textColor=SLATE, fontName="Helvetica",
+                         alignment=TA_CENTER, spaceAfter=2)
+    sKpiLbl  = S("kl",   fontSize=7,  textColor=SLATE, fontName="Helvetica",
+                         alignment=TA_CENTER)
+    sKpiVal  = S("kv",   fontSize=17, textColor=TEAL,  fontName="Helvetica-Bold",
+                         alignment=TA_CENTER)
+    sKpiUnt  = S("ku",   fontSize=7,  textColor=SLATE, fontName="Helvetica",
+                         alignment=TA_CENTER)
+    sCfgLbl  = S("cfl",  fontSize=8.5,textColor=SLATE, fontName="Helvetica")
+    sCfgVal  = S("cfv",  fontSize=8.5,textColor=NAVY,  fontName="Courier-Bold")
+    sTblHd   = S("th",   fontSize=8.5,textColor=colors.white,
+                         fontName="Helvetica-Bold", alignment=TA_CENTER)
+    sTblCl   = S("tc",   fontSize=8,  textColor=colors.HexColor("#374151"),
+                         fontName="Courier", leading=11)
+
+    BASE_TBL = TableStyle([
+        ("BACKGROUND",    (0,0), (-1, 0), NAVY),
+        ("ROWBACKGROUNDS",(0,1), (-1,-1), [LIGHT, colors.white]),
+        ("GRID",          (0,0), (-1,-1), 0.4, colors.HexColor("#e2e8f0")),
+        ("LEFTPADDING",   (0,0), (-1,-1), 6),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 6),
+        ("TOPPADDING",    (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+    ])
+
+    def hr(): return HRFlowable(width="100%", thickness=0.5,
+                                 color=colors.HexColor("#e2e8f0"),
+                                 spaceBefore=6, spaceAfter=6)
+
+    def h2(txt):
+        return Paragraph(f'<font color="#00b4d8">▌</font>  <b>{txt}</b>', sH2)
+
+    def tbl(headers, rows, widths):
+        data = [[Paragraph(h, sTblHd) for h in headers]]
+        for row in rows:
+            data.append([Paragraph(str(c), sTblCl) for c in row])
+        t = Table(data, colWidths=widths)
+        t.setStyle(BASE_TBL)
+        return t
+
+    def small_kv_tbl(rows):
+        data = [[Paragraph(r[0], sCfgLbl), Paragraph(r[1], sCfgVal)] for r in rows]
+        t = Table(data, colWidths=[CW*0.23, CW*0.27])
+        t.setStyle(TableStyle([
+            ("ROWBACKGROUNDS",(0,0),(-1,-1),[LIGHT, colors.white]),
+            ("GRID",(0,0),(-1,-1),0.3,colors.HexColor("#e2e8f0")),
+            ("LEFTPADDING",(0,0),(-1,-1),5),("RIGHTPADDING",(0,0),(-1,-1),5),
+            ("TOPPADDING",(0,0),(-1,-1),3), ("BOTTOMPADDING",(0,0),(-1,-1),3),
+        ]))
+        return t
+
+    # ── Chart helpers ─────────────────────────────────────────
+    CHART_W, CHART_H = 680, 255
     cc = chem["color"]
-    C_ORG = "#f77f00"
-    C_RED = "#ef233c"
-    C_GRN = "#2dc653"
-    C_YLW = "#ffd60a"
-    C_PUR = "#c77dff"
+    C_ORG = "#f77f00"; C_RED = "#ef233c"; C_GRN = "#2dc653"
+    C_YLW = "#ffd60a"; C_PUR = "#c77dff"
     PALS  = [cc, C_ORG, C_GRN, C_RED, C_PUR, "#a8dadc", "#457b9d"]
 
-    W, H = 820, 320
     LBASE = dict(
         paper_bgcolor="#ffffff", plot_bgcolor="#f8fafc",
-        font=dict(color="#1e293b", family="Arial, sans-serif", size=11),
-        margin=dict(t=46, b=44, l=60, r=20),
-        width=W, height=H,
+        font=dict(color="#1e293b", family="Arial", size=10),
+        margin=dict(t=44, b=42, l=58, r=18),
+        width=CHART_W, height=CHART_H,
         legend=dict(bgcolor="rgba(248,250,252,0.9)", bordercolor="#cbd5e1",
                     borderwidth=1, orientation="h", yanchor="bottom",
-                    y=1.05, xanchor="center", x=0.5, font=dict(size=10)),
-        xaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1",
-                   showgrid=True, zeroline=False),
-        yaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1",
-                   showgrid=True, zeroline=False),
+                    y=1.04, xanchor="center", x=0.5, font=dict(size=9)),
+        xaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1", showgrid=True, zeroline=False),
+        yaxis=dict(gridcolor="#e2e8f0", linecolor="#cbd5e1", showgrid=True, zeroline=False),
     )
 
-    def fig2b64(fig):
+    def T(txt): return dict(text=txt, font=dict(size=11, color="#0f172a"),
+                             x=0.5, xanchor="center")
+
+    def fig_to_rl(fig, w_mm=None):
         buf = io.BytesIO()
         fig.write_image(buf, format="png", scale=2)
         buf.seek(0)
-        return base64.b64encode(buf.read()).decode()
+        rw = (w_mm * mm) if w_mm else CW
+        rh = rw * CHART_H / CHART_W
+        return RLImage(buf, width=rw, height=rh)
 
-    def title(t): return dict(text=t, font=dict(size=13, color="#0f172a"),
-                               x=0.5, xanchor="center")
-
-    results = {}
-
-    # ── Fig 1: Voltage Tracking ───────────────────────────────
-    idx = slice(0, min(3500, N))
+    # ── Build 5 charts ────────────────────────────────────────
+    # Fig 1 — Voltage Tracking
     f1 = go.Figure()
-    f1.add_trace(go.Scatter(x=t_h[idx], y=log["V_true"][idx], mode="lines",
+    f1.add_trace(go.Scatter(x=t_h, y=log["V_true"], mode="lines",
         name="V_true (DFN)", line=dict(color=cc, width=2.2)))
-    f1.add_trace(go.Scatter(x=t_h[idx], y=log["V_est"][idx], mode="lines",
+    f1.add_trace(go.Scatter(x=t_h, y=log["V_est"], mode="lines",
         name=f"V_est (EKF)  RMSE={v_rmse:.1f} mV",
         line=dict(color=C_ORG, width=1.8, dash="dash")))
-    f1.update_layout(**LBASE, title=title("① Voltage Tracking — DFN vs EKF Observer"))
+    f1.update_layout(**LBASE, title=T("① Voltage Tracking — DFN vs EKF Observer"))
     f1.update_xaxes(title_text="Time [h]")
     f1.update_yaxes(title_text="Voltage [V]")
-    results["v_track"] = fig2b64(f1)
+    img_f1 = fig_to_rl(f1)
 
-    # ── Fig 2: SOC ± 2σ ──────────────────────────────────────
-    upper = log["soc_est"][idx]*100 + 2*sigma[idx]
-    lower = log["soc_est"][idx]*100 - 2*sigma[idx]
-    x_fwd = t_h[idx].tolist()
+    # Fig 2 — SOC ±2σ
+    upper = log["soc_est"]*100 + 2*sigma
+    lower = log["soc_est"]*100 - 2*sigma
     f2 = go.Figure()
     f2.add_trace(go.Scatter(
-        x=x_fwd + x_fwd[::-1],
+        x=t_h.tolist() + t_h.tolist()[::-1],
         y=upper.tolist() + lower.tolist()[::-1],
         fill="toself", fillcolor="rgba(247,127,0,0.13)",
         line=dict(color="rgba(0,0,0,0)"), name="±2σ Band"))
-    f2.add_trace(go.Scatter(x=t_h[idx], y=log["soc_true"][idx]*100, mode="lines",
+    f2.add_trace(go.Scatter(x=t_h, y=log["soc_true"]*100, mode="lines",
         name="SOC_true (DFN)", line=dict(color=cc, width=2.2)))
-    f2.add_trace(go.Scatter(x=t_h[idx], y=log["soc_est"][idx]*100, mode="lines",
+    f2.add_trace(go.Scatter(x=t_h, y=log["soc_est"]*100, mode="lines",
         name=f"SOC_est (EKF)  RMSE={s_rmse:.2f}%",
         line=dict(color=C_ORG, width=1.8, dash="dash")))
-    f2.update_layout(**LBASE, title=title("② SOC Estimation with ±2σ Uncertainty Band"))
+    f2.update_layout(**LBASE, title=T("② SOC Estimation with ±2σ Uncertainty Band"))
     f2.update_xaxes(title_text="Time [h]")
     f2.update_yaxes(title_text="SOC [%]")
-    results["soc_band"] = fig2b64(f2)
+    img_f2 = fig_to_rl(f2)
 
-    # ── Fig 3: tr(P) — selected cycles ───────────────────────
+    # Fig 3 — tr(P) convergence
     f3 = go.Figure()
-    shown = list(dict.fromkeys([0, 1] +
-                 list(range(0, n_cycles, max(1, n_cycles//5))) +
-                 [n_cycles-1]))[:7]
+    shown = sorted(set([0,1]+list(range(0,n_cycles,max(1,n_cycles//5)))+[n_cycles-1]))[:7]
     for i, c in enumerate(shown):
         s, e = c*cl, min((c+1)*cl, N)
         f3.add_trace(go.Scatter(x=t_h[s:e], y=log["P_tr"][s:e], mode="lines",
-            name=f"Cycle {c+1}",
-            line=dict(color=PALS[i % len(PALS)], width=1.9)))
-    f3.update_layout(**LBASE, title=title("③ State Covariance tr(P) — Convergence"))
+            name=f"Cycle {c+1}", line=dict(color=PALS[i%len(PALS)], width=1.9)))
+    f3.update_layout(**LBASE, title=T("③ State Covariance tr(P) — EKF Convergence"))
     f3.update_xaxes(title_text="Time [h]")
     f3.update_yaxes(title_text="tr(P)", tickformat=".1e")
-    results["trP"] = fig2b64(f3)
+    img_f3 = fig_to_rl(f3)
 
-    # ── Fig 4: Cycle-by-cycle peak tr(P) — Line ───────────────
-    growth = [(p - cyc_pk[0]) / cyc_pk[0] * 100 for p in cyc_pk]
-    mk_colors = ["#94a3b8" if i == 0 else
-                 (C_GRN if g <= 10 else (C_YLW if g <= 25 else C_RED))
-                 for i, g in enumerate(growth)]
+    # Fig 4 — cycle peak tr(P)
+    growth_arr = [(p-cyc_pk[0])/cyc_pk[0]*100 for p in cyc_pk]
+    mk_col = ["#94a3b8" if i==0 else
+              (C_GRN if g<=10 else (C_YLW if g<=25 else C_RED))
+              for i,g in enumerate(growth_arr)]
     f4 = go.Figure()
     f4.add_trace(go.Scatter(
         x=list(range(1, n_cycles+1)), y=cyc_pk,
         mode="lines+markers",
         line=dict(color="#0369a1", width=2.0),
-        marker=dict(color=mk_colors, size=7),
+        marker=dict(color=mk_col, size=7, line=dict(width=1, color="#0f172a")),
         name="Peak tr(P)"))
-    f4.add_hline(y=cyc_pk[0], line_dash="dot", line_color="#94a3b8", line_width=1,
-        annotation_text="Cycle 1 baseline", annotation_position="right",
+    f4.add_hline(y=cyc_pk[0], line_dash="dot", line_color="#94a3b8",
+        annotation_text="Cycle 1 baseline",
         annotation_font=dict(size=9, color="#64748b"))
-    f4.update_layout(**LBASE, title=title("④ Cycle-by-Cycle Uncertainty Propagation — Peak tr(P)"))
-    f4.update_xaxes(title_text="Cycle Number", dtick=max(1, n_cycles//8))
+    f4.update_layout(**LBASE, title=T("④ Cycle-by-Cycle Uncertainty Growth — Peak tr(P)"))
+    f4.update_xaxes(title_text="Cycle Number", dtick=max(1,n_cycles//8))
     f4.update_yaxes(title_text="Peak tr(P)", tickformat=".2e")
-    results["cycles"] = fig2b64(f4)
+    img_f4 = fig_to_rl(f4)
 
-    # ── Fig 5: Innovation residuals ───────────────────────────
-    idx2 = slice(0, min(2500, N))
-    x2 = t_h[idx2].tolist()
-    innov_rms = float(np.sqrt(np.mean(log["innov"]**2)) * 1000)
+    # Fig 5 — Innovation residuals
+    innov_rms = float(np.sqrt(np.mean(log["innov"]**2))*1000)
     f5 = go.Figure()
-    f5.add_trace(go.Scatter(
-        x=x2 + x2[::-1],
-        y=[2*noise_std*1000]*len(x2) + [-2*noise_std*1000]*len(x2),
-        fill="toself", fillcolor="rgba(220,38,38,0.07)",
-        line=dict(color="rgba(0,0,0,0)"), name="±2σ = ±{:.0f} mV".format(2*noise_std*1000)))
-    f5.add_trace(go.Scatter(x=t_h[idx2], y=log["innov"][idx2]*1000, mode="lines",
-        line=dict(color="#1d4ed8", width=0.9), opacity=0.80, name="ν(k) residuals"))
-    f5.add_hline(y=0, line_color="#94a3b8", line_width=1)
-    f5.add_annotation(x=0.98, y=0.96, xref="paper", yref="paper",
-        text=f"RMS={innov_rms:.1f} mV | Mean={float(log['innov'].mean())*1000:.2f} mV",
-        showarrow=False, align="right", font=dict(size=9, color="#475569"),
-        bgcolor="rgba(255,255,255,0.85)", bordercolor="#e2e8f0", borderwidth=1)
-    f5.update_layout(**LBASE, title=title("⑤ Innovation Residuals ν(k) — Whiteness Test"))
+    f5.add_trace(go.Scatter(x=t_h, y=log["innov"]*1000, mode="lines",
+        line=dict(color="#1d4ed8", width=0.9), opacity=0.8,
+        name="Innovation ν(k)"))
+    f5.add_hline(y=+2*noise_std*1000, line_dash="dash", line_color="#ef4444",
+        annotation_text=f"+2σ={2*noise_std*1000:.0f} mV",
+        annotation_font=dict(size=9))
+    f5.add_hline(y=-2*noise_std*1000, line_dash="dash", line_color="#ef4444",
+        annotation_text=f"−2σ", annotation_font=dict(size=9))
+    f5.add_hline(y=0, line_color="#94a3b8", line_width=0.8)
+    f5.update_layout(**LBASE, title=T("⑤ Innovation Residuals ν(k) — Whiteness Test"))
     f5.update_xaxes(title_text="Time [h]")
     f5.update_yaxes(title_text="ν(k) [mV]")
-    results["innov"] = fig2b64(f5)
+    img_f5 = fig_to_rl(f5)
 
-    return results
+    # ── Assemble PDF ──────────────────────────────────────────
+    pdf_buf = io.BytesIO()
+    doc = SimpleDocTemplate(pdf_buf, pagesize=A4,
+        leftMargin=18*mm, rightMargin=18*mm,
+        topMargin=15*mm, bottomMargin=15*mm,
+        title="BattSim v4.2 Report",
+        author="Eng. Thaer Abushawar")
 
+    story = []
 
-if st.button("🖨️  Generate PDF Report", use_container_width=False, type="secondary"):
+    # ══ PAGE 1 — COVER ═══════════════════════════════════════
+    story += [
+        Spacer(1, 14*mm),
+        Paragraph("BattSim v4.2", S("ltx", fontSize=30, textColor=TEAL,
+            fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=5)),
+        Paragraph("Digital Twin Co-Simulation Report", sSubCov),
+        Paragraph("DFN Physical Asset  ↔  EKF Digital Observer", sSmall),
+        Spacer(1, 8*mm), hr(), Spacer(1, 4*mm),
+    ]
 
-    with st.spinner("Rendering charts & building report…"):
+    # Config + KPI side by side
+    cfg_rows = [
+        ["Cell Chemistry",  chem_name.split("(")[0].strip()],
+        ["Test Protocol",   protocol_label],
+        ["Cycles / C-Rate", f"{n_cycles} cyc @ {c_rate}C"],
+        ["Sensor Noise σ",  f"{noise_std*1000:.0f} mV"],
+        ["P₀ / Q / R",      f"{p0_scale:.0e} / {q_scale} / {r_scale}"],
+        ["Data Points",     f"{N:,} @ dt=10 s"],
+        ["Date",            pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")],
+        ["Author",          "Eng. Thaer Abushawar"],
+    ]
+    cfg_tbl = Table(
+        [[Paragraph(r[0], sCfgLbl), Paragraph(r[1], sCfgVal)] for r in cfg_rows],
+        colWidths=[CW*0.36, CW*0.64])
+    cfg_tbl.setStyle(TableStyle([
+        ("ROWBACKGROUNDS",(0,0),(-1,-1),[LIGHT,colors.white]),
+        ("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#e2e8f0")),
+        ("LEFTPADDING",(0,0),(-1,-1),8),("RIGHTPADDING",(0,0),(-1,-1),8),
+        ("TOPPADDING",(0,0),(-1,-1),5), ("BOTTOMPADDING",(0,0),(-1,-1),5),
+    ]))
+    story += [cfg_tbl, Spacer(1, 7*mm)]
 
-        charts = build_charts_b64(
-            log, t_h, sigma, cyc_pk, noise_std, n_cycles, cl, N,
-            v_rmse, s_rmse, chem
-        )
+    # KPI cards
+    kpi_vals = [
+        ("VOLTAGE RMSE", f"{v_rmse:.2f}", "mV"),
+        ("SOC RMSE",     f"{s_rmse:.3f}", "%"),
+        ("PEAK tr(P)",   f"{log['P_tr'].max():.1e}", "state UQ"),
+        ("CYCLES RUN",   f"{n_cycles}", f"@ {c_rate}C"),
+    ]
+    kpi_row1 = [Paragraph(k[0], sKpiLbl) for k in kpi_vals]
+    kpi_row2 = [Paragraph(k[1], sKpiVal) for k in kpi_vals]
+    kpi_row3 = [Paragraph(k[2], sKpiUnt) for k in kpi_vals]
+    kpi_tbl = Table([kpi_row1, kpi_row2, kpi_row3], colWidths=[CW/4]*4)
+    kpi_tbl.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,-1),LIGHT),
+        ("BOX",(0,0),(-1,-1),0.5,colors.HexColor("#e2e8f0")),
+        ("GRID",(0,0),(-1,-1),0.4,colors.HexColor("#e2e8f0")),
+        ("ALIGN",(0,0),(-1,-1),"CENTER"),
+        ("TOPPADDING",(0,0),(-1,-1),7),("BOTTOMPADDING",(0,0),(-1,-1),7),
+    ]))
+    story += [kpi_tbl, Spacer(1,5*mm), hr(),
+              Paragraph(
+                  "Refs: Plett (2004) J. Power Sources 134 · "
+                  "Chen et al. (2020) J. Electrochem. Soc. 167 · "
+                  "Coman et al. (2022)", sSmall),
+              PageBreak()]
 
-    innov_rms  = float(np.sqrt(np.mean(log["innov"]**2)) * 1000)
-    p_ratio    = float(log["P_tr"][-1] / log["P_tr"][0] * 100)
-    growth_pct = float((cyc_pk[-1] - cyc_pk[0]) / cyc_pk[0] * 100) if n_cycles > 1 else 0.0
-    _ir        = innov_rms / (noise_std * 1000)
-    _im_abs    = abs(float(log["innov"].mean()) * 1000)
+    # ══ PAGE 2 — MACHINE 1 + FIG 1 + FIG 2 ══════════════════
+    story.append(h2("Machine 1 — PyBaMM DFN Physical Asset"))
+    story.append(Paragraph(
+        f"The DFN model provides ground-truth electrochemical states. "
+        f"Machine 2 observes only V_noisy = V_true + η  (σ = {noise_std*1000:.0f} mV).",
+        sBody))
+    story.append(Spacer(1, 3*mm))
 
-    def _cls(cond_ok, cond_warn):
-        return "badge-ok" if cond_ok else ("badge-warn" if cond_warn else "badge-err")
-    def _lbl(cond_ok, cond_warn):
-        return "PASS"     if cond_ok else ("REVIEW"     if cond_warn else "FAIL")
+    left_rows = [
+        ["Q nominal", f"{Q_nom:.2f} Ah"],
+        ["R₀",        f"{chem['R0']*1000:.1f} mΩ"],
+        ["R₁/C₁",    f"{chem['R1']*1000:.0f} mΩ / {chem['C1']:.0f} F"],
+        ["R₂/C₂",    f"{chem['R2']*1000:.0f} mΩ / {chem['C2']:.0f} F"],
+        ["V range",  f"{chem['v_min']}–{chem['v_max']} V"],
+    ]
+    right_rows = [
+        ["Total time",  f"{log['t'][-1]/3600:.2f} h"],
+        ["Data points", f"{N:,}"],
+        ["V_true range",f"{log['V_true'].min():.3f}–{log['V_true'].max():.3f} V"],
+        ["I range",     f"{log['I_true'].min():.2f}–{log['I_true'].max():.2f} A"],
+        ["T range",     f"{log['T_true'].min():.1f}–{log['T_true'].max():.1f} °C"],
+    ]
+    two = Table([[small_kv_tbl(left_rows), small_kv_tbl(right_rows)]],
+                colWidths=[CW/2, CW/2])
+    two.setStyle(TableStyle([("LEFTPADDING",(0,0),(-1,-1),0),
+                              ("RIGHTPADDING",(0,0),(-1,-1),0),
+                              ("VALIGN",(0,0),(-1,-1),"TOP")]))
+    story += [two, Spacer(1,4*mm), hr(),
+              img_f1,
+              Paragraph("Fig. 1 — Voltage tracking: DFN ground-truth (solid) vs EKF reconstruction (dashed).", sCaption),
+              Spacer(1,3*mm),
+              img_f2,
+              Paragraph("Fig. 2 — SOC estimation with ±2σ uncertainty band (orange shading). Method: Plett (2004).", sCaption),
+              PageBreak()]
 
-    # ── Cycle rows (UQ table) ─────────────────────────────────
-    cycle_rows = ""
+    # ══ PAGE 3 — MACHINE 2 + FIG 3 + FIG 5 ══════════════════
+    story.append(h2("Machine 2 — 2-RC ECM + Extended Kalman Filter"))
+    story.append(Paragraph(
+        "The EKF reconstructs battery states [SOC, V_RC1, V_RC2] "
+        "from noisy voltage and current only — no access to DFN internals.", sBody))
+    story.append(Spacer(1, 3*mm))
+
+    _ir     = innov_rms / (noise_std * 1000)
+    _im_abs = abs(float(log["innov"].mean()) * 1000)
+    p_ratio = float(log["P_tr"][-1] / log["P_tr"][0] * 100)
+
+    ekf_left = [
+        ["V RMSE",       f"{v_rmse:.3f} mV"],
+        ["SOC RMSE",     f"{s_rmse:.4f} %"],
+        ["Max SOC err",  f"{np.abs(log['soc_true']-log['soc_est']).max()*100:.3f} %"],
+        ["tr(P) initial",f"{log['P_tr'][0]:.3e}"],
+        ["tr(P) final",  f"{log['P_tr'][-1]:.3e}"],
+        ["Convergence",  f"{p_ratio:.2f}% of P₀"],
+    ]
+    ekf_right = [
+        ["∂h/∂SOC",  f"{float(last_Ck[0,0]):.5f}"],
+        ["∂h/∂VRC1", f"{float(last_Ck[0,1]):.5f}"],
+        ["∂h/∂VRC2", f"{float(last_Ck[0,2]):.5f}"],
+        ["K_SOC",    f"{float(last_Kk[0,0]):.6f}"],
+        ["K_VRC1",   f"{float(last_Kk[1,0]):.6f}"],
+        ["K_VRC2",   f"{float(last_Kk[2,0]):.6f}"],
+    ]
+    two2 = Table([[small_kv_tbl(ekf_left), small_kv_tbl(ekf_right)]],
+                 colWidths=[CW/2, CW/2])
+    two2.setStyle(TableStyle([("LEFTPADDING",(0,0),(-1,-1),0),
+                               ("RIGHTPADDING",(0,0),(-1,-1),0),
+                               ("VALIGN",(0,0),(-1,-1),"TOP")]))
+    story += [two2, Spacer(1, 3*mm), hr()]
+
+    # Innovation whiteness table
+    def _b(ok_c, w_c): return "PASS" if ok_c else ("REVIEW" if w_c else "FAIL")
+    inn_rows = [
+        ["Innovation RMS",   f"{innov_rms:.3f} mV", f"< {noise_std*1500:.1f} mV",
+         _b(innov_rms<noise_std*1500, innov_rms<noise_std*3000)],
+        ["Inn./Noise ratio", f"{_ir:.3f}×",          "< 1.5×",
+         _b(_ir<1.5, _ir<3.0)],
+        ["Innovation mean",  f"{_im_abs:.4f} mV",   "≈ 0",
+         _b(_im_abs<noise_std*500, _im_abs<noise_std*1000)],
+    ]
+    story += [tbl(["Metric","Value","Target","Status"], inn_rows,
+                  [CW*0.33, CW*0.22, CW*0.22, CW*0.23]),
+              Spacer(1, 4*mm),
+              img_f3,
+              Paragraph("Fig. 3 — State covariance tr(P) convergence. tr(P) → 0 confirms EKF convergence.", sCaption),
+              Spacer(1, 3*mm),
+              img_f5,
+              Paragraph("Fig. 5 — Innovation residuals ν(k). White noise within ±2σ bounds → well-tuned EKF.", sCaption),
+              PageBreak()]
+
+    # ══ PAGE 4 — UQ ANALYTICS + ASSESSMENT ═══════════════════
+    story.append(h2("Uncertainty Propagation Analytics"))
+    story.append(Paragraph(
+        "Cycle-by-cycle peak tr(P) quantifies how state uncertainty evolves across "
+        "charge–discharge cycles. Growth > 20% signals ECM model error accumulation.", sBody))
+    story += [Spacer(1, 2*mm),
+              img_f4,
+              Paragraph(
+                  "Fig. 4 — Cycle-by-cycle peak tr(P). "
+                  "Colour: green ≤10%, yellow ≤25%, red >25% growth vs Cycle 1.", sCaption),
+              Spacer(1, 3*mm), hr()]
+
+    # Cycle summary table
+    cyc_hdr = ["Cycle","SOC₀[%]","SOC_min[%]","SOC_end[%]","Dur[min]",
+               "Peak tr(P)","Δ vs C1","Peak σ_SOC[%]","Status"]
+    cyc_data = []
     for c in range(n_cycles):
-        g    = (cyc_pk[c] - cyc_pk[0]) / cyc_pk[0] * 100 if c > 0 else 0
-        cls  = "badge-ok" if c == 0 or g <= 10 else ("badge-warn" if g <= 25 else "badge-err")
-        lbl  = "Baseline" if c == 0 else ("Stable" if g <= 10 else ("Growing" if g <= 25 else "High"))
-        soc_s = np.sqrt(log["P_soc"][c*cl:min((c+1)*cl, N)]).max() * 100
-        s_idx = c * cl; e_idx = min((c+1)*cl, N)
-        dur   = (log["t"][e_idx-1] - log["t"][s_idx]) / 60
-        cycle_rows += (
-            f"<tr><td>Cycle {c+1}</td>"
-            f"<td>{log['soc_true'][s_idx]*100:.1f}</td>"
-            f"<td>{log['soc_true'][s_idx:e_idx].min()*100:.1f}</td>"
-            f"<td>{log['soc_true'][e_idx-1]*100:.1f}</td>"
-            f"<td>{dur:.1f}</td>"
-            f"<td>{cyc_pk[c]:.4e}</td>"
-            f"<td>{'Baseline' if c==0 else f'{g:+.1f}%'}</td>"
-            f"<td>{soc_s:.4f}</td>"
-            f"<td><span class='{cls}'>{lbl}</span></td></tr>"
-        )
+        g    = (cyc_pk[c]-cyc_pk[0])/cyc_pk[0]*100 if c>0 else 0
+        lbl  = "Baseline" if c==0 else ("Stable" if g<=10 else ("Growing" if g<=25 else "High"))
+        psoc = np.sqrt(log["P_soc"][c*cl:min((c+1)*cl,N)]).max()*100
+        s_i  = c*cl; e_i = min((c+1)*cl,N)
+        dur  = (log["t"][e_i-1]-log["t"][s_i])/60
+        cyc_data.append([
+            f"Cycle {c+1}",
+            f"{log['soc_true'][s_i]*100:.1f}",
+            f"{log['soc_true'][s_i:e_i].min()*100:.1f}",
+            f"{log['soc_true'][e_i-1]*100:.1f}",
+            f"{dur:.1f}",
+            f"{cyc_pk[c]:.3e}",
+            "Baseline" if c==0 else f"{g:+.1f}%",
+            f"{psoc:.4f}",
+            lbl
+        ])
+    cw9 = [CW*w for w in [0.10,0.09,0.10,0.10,0.09,0.14,0.10,0.14,0.14]]
+    story += [tbl(cyc_hdr, cyc_data, cw9), Spacer(1, 4*mm), hr()]
 
-    # ── Assessment rows ───────────────────────────────────────
-    msgs = engineering_assessment(log, noise_std, n_cycles, cyc_pk)
-    assess_rows = ""
+    # Engineering assessment
+    story.append(h2("Engineering Assessment"))
+    story.append(Spacer(1, 2*mm))
     for kind, msg in msgs:
-        icon = {"ok":"✅","warn":"⚠️","err":"🔴"}[kind]
-        assess_rows += f"<div class='assess-row assess-{kind}'><strong>{icon}</strong> {msg}</div>"
+        icon = "✅" if kind=="ok" else ("⚠️" if kind=="warn" else "🔴")
+        bg   = GRN_B if kind=="ok" else (YLW_B if kind=="warn" else RED_B)
+        tc   = GRN_T if kind=="ok" else (YLW_T if kind=="warn" else RED_T)
+        row  = Table(
+            [[Paragraph(f"{icon}  {msg}",
+                         S("am", fontSize=8.5, textColor=tc,
+                           fontName="Helvetica", leading=13))]],
+            colWidths=[CW])
+        row.setStyle(TableStyle([
+            ("BACKGROUND",(0,0),(-1,-1),bg),
+            ("LEFTPADDING",(0,0),(-1,-1),8), ("RIGHTPADDING",(0,0),(-1,-1),8),
+            ("TOPPADDING",(0,0),(-1,-1),5),  ("BOTTOMPADDING",(0,0),(-1,-1),5),
+        ]))
+        story += [row, Spacer(1, 2*mm)]
 
-    # ── Chart caption helper ──────────────────────────────────
-    def chart_img(b64, caption):
-        return f"""
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;
-                    padding:10px;margin:10px 0;text-align:center">
-          <img src="image/png;base64,{b64}"
-               style="max-width:100%;border-radius:4px" alt="{caption}">
-          <div style="font-size:8pt;color:#64748b;margin-top:5px;font-style:italic">{caption}</div>
-        </div>"""
+    story += [
+        Spacer(1, 8*mm), hr(),
+        Paragraph("BattSim v4.2 — Digital Twin Co-Simulation Framework", sSmall),
+        Paragraph("Designed & Developed by Eng. Thaer Abushawar", sSmall),
+        Paragraph(
+            "Plett (2004) J. Power Sources 134  ·  "
+            "Chen et al. (2020) J. Electrochem. Soc. 167  ·  "
+            "Coman et al. (2022)", sSmall),
+    ]
 
-    report_html = f"""<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<title>BattSim v4.2 — Academic Report</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-*{{box-sizing:border-box;margin:0;padding:0}}
-body{{font-family:'Inter',Arial,sans-serif;font-size:10.5pt;color:#1a1a2e;background:#fff;line-height:1.6}}
-.page{{width:210mm;min-height:297mm;padding:15mm 18mm 13mm;page-break-after:always;position:relative}}
-.page:last-child{{page-break-after:avoid}}
-.ph{{display:flex;justify-content:space-between;align-items:center;border-bottom:2.5px solid #00b4d8;padding-bottom:7px;margin-bottom:15px}}
-.logo{{font-size:16pt;font-weight:700;color:#00b4d8}}
-.logo-sub{{font-size:7.5pt;color:#64748b;margin-top:1px}}
-.pmeta{{text-align:right;font-size:7.5pt;color:#64748b}}
-.pf{{position:absolute;bottom:8mm;left:18mm;right:18mm;display:flex;justify-content:space-between;font-size:7pt;color:#aaa;border-top:1px solid #e5e7eb;padding-top:4px}}
-/* Cover */
-.cover-body{{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:235mm;text-align:center}}
-.main-title{{font-size:25pt;font-weight:700;color:#0f172a;margin-bottom:6px}}
-.main-sub{{font-size:12pt;color:#00b4d8;font-weight:400;margin-bottom:22px}}
-.cfg-box{{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 26px;margin:14px 0;width:100%;max-width:390px;text-align:left}}
-.cfg-row{{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9;font-size:9pt}}
-.cfg-row:last-child{{border-bottom:none}}
-.cfg-lbl{{color:#64748b}}.cfg-val{{font-weight:600;font-family:'JetBrains Mono',monospace;color:#1e293b}}
-.kpi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0;width:100%;max-width:460px}}
-.kpi-card{{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 7px;text-align:center}}
-.kpi-lbl{{font-size:7pt;color:#64748b;text-transform:uppercase;letter-spacing:.05em}}
-.kpi-val{{font-size:14pt;font-weight:700;color:#00b4d8;font-family:'JetBrains Mono',monospace}}
-.kpi-unit{{font-size:7pt;color:#94a3b8}}
-/* Body */
-h2{{font-size:12.5pt;font-weight:700;color:#0f172a;border-left:4px solid #00b4d8;padding-left:9px;margin:14px 0 7px}}
-h3{{font-size:10pt;font-weight:600;color:#1e293b;margin:10px 0 5px}}
-p{{margin-bottom:7px;color:#374151;font-size:10pt}}
-table{{width:100%;border-collapse:collapse;margin:9px 0;font-size:8pt}}
-th{{background:#0f172a;color:#fff;padding:6px 8px;text-align:left;font-weight:600;font-size:7.5pt}}
-td{{padding:5px 8px;border-bottom:1px solid #e2e8f0;color:#374151;font-family:'JetBrains Mono',monospace;font-size:7.5pt}}
-tr:nth-child(even) td{{background:#f8fafc}}
-.badge-ok{{background:#dcfce7;color:#166534;border-radius:4px;padding:1px 6px;font-size:7.5pt;font-weight:600}}
-.badge-warn{{background:#fef9c3;color:#854d0e;border-radius:4px;padding:1px 6px;font-size:7.5pt;font-weight:600}}
-.badge-err{{background:#fee2e2;color:#991b1b;border-radius:4px;padding:1px 6px;font-size:7.5pt;font-weight:600}}
-.fbox{{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;font-family:'JetBrains Mono',monospace;font-size:8.5pt;color:#1e293b;margin:7px 0}}
-hr{{border:none;border-top:1px solid #e5e7eb;margin:11px 0}}
-.two-col{{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:7px 0}}
-.assess-row{{display:flex;align-items:flex-start;gap:7px;padding:5px 9px;border-radius:6px;margin:4px 0;font-size:9pt}}
-.assess-ok{{background:#f0fdf4;border-left:3px solid #22c55e;color:#166534}}
-.assess-warn{{background:#fffbeb;border-left:3px solid #f59e0b;color:#92400e}}
-.assess-err{{background:#fef2f2;border-left:3px solid #ef4444;color:#991b1b}}
-@media print{{body{{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-  .page{{page-break-after:always}}.page:last-child{{page-break-after:avoid}}}}
-</style></head><body>
+    doc.build(story)
+    pdf_buf.seek(0)
+    return pdf_buf.read()
 
-<!-- ═══ PAGE 1 — COVER ═══ -->
-<div class="page">
-  <div class="ph">
-    <div><div class="logo">🔋 BattSim v4.2</div>
-    <div class="logo-sub">Digital Twin Co-Simulation Framework — Academic Report</div></div>
-    <div class="pmeta">Generated: {pd.Timestamp.now().strftime("%Y-%m-%d %H:%M")}<br>Eng. Thaer Abushawar</div>
-  </div>
-  <div class="cover-body">
-    <div class="main-title">Simulation & UQ Report</div>
-    <div class="main-sub">DFN Physical Asset ↔ EKF Digital Observer</div>
-    <div class="cfg-box">
-      <div class="cfg-row"><span class="cfg-lbl">Cell Chemistry</span><span class="cfg-val">{chem_name.split("(")[0].strip()}</span></div>
-      <div class="cfg-row"><span class="cfg-lbl">Protocol</span><span class="cfg-val">{protocol_label} · {c_rate}C</span></div>
-      <div class="cfg-row"><span class="cfg-lbl">Cycles</span><span class="cfg-val">{n_cycles}</span></div>
-      <div class="cfg-row"><span class="cfg-lbl">Sensor Noise σ</span><span class="cfg-val">{noise_std*1000:.0f} mV</span></div>
-      <div class="cfg-row"><span class="cfg-lbl">P₀ / Q / R</span><span class="cfg-val">{p0_scale:.0e} / {q_scale} / {r_scale}</span></div>
-      <div class="cfg-row"><span class="cfg-lbl">Data Points</span><span class="cfg-val">{N:,} @ dt=10 s</span></div>
-      <div class="cfg-row"><span class="cfg-lbl">Total Duration</span><span class="cfg-val">{log['t'][-1]/3600:.1f} h</span></div>
-    </div>
-    <div class="kpi-grid">
-      <div class="kpi-card"><div class="kpi-lbl">V RMSE</div><div class="kpi-val">{v_rmse:.2f}</div><div class="kpi-unit">mV</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">SOC RMSE</div><div class="kpi-val">{s_rmse:.3f}</div><div class="kpi-unit">%</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">tr(P) drop</div><div class="kpi-val">{abs(growth_pct):.0f}%</div><div class="kpi-unit">C1→C2</div></div>
-      <div class="kpi-card"><div class="kpi-lbl">Cycles</div><div class="kpi-val">{n_cycles}</div><div class="kpi-unit">@ {c_rate}C</div></div>
-    </div>
-    <p style="font-size:8pt;color:#94a3b8;margin-top:14px;">
-      Plett (2004) J. Power Sources 134 · Chen et al. (2020) J. Electrochem. Soc. 167 · Coman et al. (2022)
-    </p>
-  </div>
-  <div class="pf"><span>BattSim v4.2 — Digital Twin Co-Simulation</span><span>Page 1 of 4</span></div>
-</div>
 
-<!-- ═══ PAGE 2 — DFN + CHARTS 1 & 2 ═══ -->
-<div class="page">
-  <div class="ph">
-    <div><div class="logo">🖥️ Machine 1 — Physical Asset (DFN)</div>
-    <div class="logo-sub">PyBaMM Electrochemical Ground Truth</div></div>
-    <div class="pmeta">{chem_name.split("(")[0].strip()} · {protocol_label} · {c_rate}C</div>
-  </div>
-
-  <div class="two-col">
-    <div>
-      <h3>Cell Parameters (2-RC ECM)</h3>
-      <table>
-        <tr><th>Parameter</th><th>Value</th></tr>
-        <tr><td>Q nominal</td><td>{Q_nom:.2f} Ah</td></tr>
-        <tr><td>R₀</td><td>{chem['R0']*1000:.1f} mΩ</td></tr>
-        <tr><td>R₁ / C₁</td><td>{chem['R1']*1000:.0f} mΩ / {chem['C1']:.0f} F</td></tr>
-        <tr><td>R₂ / C₂</td><td>{chem['R2']*1000:.0f} mΩ / {chem['C2']:.0f} F</td></tr>
-        <tr><td>V range</td><td>{chem['v_min']} – {chem['v_max']} V</td></tr>
-        <tr><td>σ noise</td><td>{noise_std*1000:.0f} mV</td></tr>
-      </table>
-    </div>
-    <div>
-      <h3>DFN Output Summary</h3>
-      <table>
-        <tr><th>Metric</th><th>Value</th></tr>
-        <tr><td>Total time</td><td>{log['t'][-1]/3600:.2f} h</td></tr>
-        <tr><td>Data points</td><td>{N:,}</td></tr>
-        <tr><td>V_true range</td><td>{log['V_true'].min():.3f} – {log['V_true'].max():.3f} V</td></tr>
-        <tr><td>I range</td><td>{log['I_true'].min():.2f} – {log['I_true'].max():.2f} A</td></tr>
-        <tr><td>T (isothermal)</td><td>25.0 °C</td></tr>
-      </table>
-    </div>
-  </div>
-
-  <div class="fbox">
-    V_noisy(t) = V_true(t) + N(0, σ²)  |  σ = {noise_std*1000:.0f} mV  |  seed=42<br>
-    SOC(t) = SOC₀ − ∫I(τ)/Q_nom dτ     |  Q_nom = {Q_nom:.2f} Ah
-  </div>
-
-  {chart_img(charts['v_track'],
-    f"Fig. 1 — Voltage Tracking: DFN ground truth vs EKF observer. "
-    f"RMSE = {v_rmse:.1f} mV. Machine 2 observes V_noisy only (not V_true).")}
-
-  {chart_img(charts['soc_band'],
-    f"Fig. 2 — SOC Estimation with ±2σ Uncertainty Band. "
-    f"RMSE = {s_rmse:.2f}%. Shaded region = EKF covariance-derived confidence interval.")}
-
-  <div class="pf"><span>BattSim v4.2 — Digital Twin Co-Simulation</span><span>Page 2 of 4</span></div>
-</div>
-
-<!-- ═══ PAGE 3 — EKF RESULTS + CHARTS 3 & 5 ═══ -->
-<div class="page">
-  <div class="ph">
-    <div><div class="logo">📡 Machine 2 — Digital Observer (EKF)</div>
-    <div class="logo-sub">2-RC ECM + Extended Kalman Filter</div></div>
-    <div class="pmeta">P₀={p0_scale:.0e} · Q={q_scale} · R={r_scale}</div>
-  </div>
-
-  <div class="two-col">
-    <div>
-      <h3>EKF Performance</h3>
-      <table>
-        <tr><th>Metric</th><th>Value</th></tr>
-        <tr><td>V RMSE</td><td>{v_rmse:.2f} mV</td></tr>
-        <tr><td>SOC RMSE</td><td>{s_rmse:.4f} %</td></tr>
-        <tr><td>Mean ±2σ band</td><td>{(2*sigma).mean():.3f} %</td></tr>
-        <tr><td>tr(P) initial</td><td>{log['P_tr'][0]:.3e}</td></tr>
-        <tr><td>tr(P) final</td><td>{log['P_tr'][-1]:.3e}</td></tr>
-        <tr><td>Convergence</td><td>{p_ratio:.2f}% of P₀</td></tr>
-      </table>
-    </div>
-    <div>
-      <h3>Innovation Test</h3>
-      <table>
-        <tr><th>Metric</th><th>Value</th><th>Status</th></tr>
-        <tr><td>Inn. RMS</td><td>{innov_rms:.2f} mV</td>
-            <td><span class="{_cls(_ir<1.5, _ir<3)}">{_lbl(_ir<1.5, _ir<3)}</span></td></tr>
-        <tr><td>Ratio/Noise</td><td>{_ir:.3f}×</td>
-            <td><span class="{_cls(_ir<1.5, _ir<3)}">{_lbl(_ir<1.5, _ir<3)}</span></td></tr>
-        <tr><td>Inn. mean</td><td>{float(log['innov'].mean())*1000:.3f} mV</td>
-            <td><span class="{_cls(_im_abs<noise_std*500, True)}">PASS</span></td></tr>
-      </table>
-      <h3 style="margin-top:8px">EKF Equations</h3>
-      <div class="fbox" style="font-size:7.5pt">
-        PREDICT: x⁻ = Ax + Bu<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;P⁻ = APA ᵀ + Q<br>
-        UPDATE:  K = P⁻Cₖᵀ(CₖP⁻Cₖᵀ + R)⁻¹<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;x = x⁻ + K·ν(k)<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;P = (I−KCₖ)P⁻(I−KCₖ)ᵀ + KRKᵀ
-      </div>
-    </div>
-  </div>
-
-  {chart_img(charts['trP'],
-    "Fig. 3 — State Covariance tr(P) for selected cycles. "
-    "Filter converges within Cycle 1 and maintains stable covariance across all cycles.")}
-
-  {chart_img(charts['innov'],
-    f"Fig. 5 — EKF Innovation residuals ν(k). "
-    f"Residuals remain within ±2σ = ±{2*noise_std*1000:.0f} mV. "
-    f"RMS = {innov_rms:.1f} mV.")}
-
-  <div class="pf"><span>BattSim v4.2 — Digital Twin Co-Simulation</span><span>Page 3 of 4</span></div>
-</div>
-
-<!-- ═══ PAGE 4 — UQ ANALYTICS + CYCLE TABLE + ASSESSMENT ═══ -->
-<div class="page">
-  <div class="ph">
-    <div><div class="logo">📊 Uncertainty Quantification — {n_cycles} Cycles</div>
-    <div class="logo-sub">Cycle-by-Cycle Covariance Propagation</div></div>
-    <div class="pmeta">{n_cycles} Cycles · {c_rate}C · σ={noise_std*1000:.0f} mV</div>
-  </div>
-
-  {chart_img(charts['cycles'],
-    f"Fig. 4 — Peak tr(P) per cycle. "
-    f"tr(P) drops {abs(growth_pct):.0f}% from Cycle 1→2 then remains stable through Cycle {n_cycles}. "
-    f"Key UQ finding: uncertainty does not accumulate across cycles in this configuration.")}
-
-  <h2>Cycle-by-Cycle Summary Table</h2>
-  <table>
-    <tr><th>Cycle</th><th>SOC₀ [%]</th><th>SOC_min [%]</th>
-        <th>SOC_end [%]</th><th>Dur [min]</th>
-        <th>Peak tr(P)</th><th>Δ vs C1</th><th>Peak σ_SOC [%]</th><th>Status</th></tr>
-    {cycle_rows}
-  </table>
-
-  <hr>
-  <h2>Engineering Assessment</h2>
-  {assess_rows}
-
-  <hr>
-  <p style="font-size:8pt;color:#94a3b8;text-align:center;margin-top:12px;">
-    <strong>BattSim v4.2</strong> — Digital Twin Co-Simulation Framework &nbsp;|&nbsp;
-    Designed &amp; Developed by <strong>Eng. Thaer Abushawar</strong><br>
-    Plett (2004) J. Power Sources 134 · Chen et al. (2020) J. Electrochem. Soc. 167 · Coman et al. (2022)
-  </p>
-  <div class="pf"><span>BattSim v4.2 — Digital Twin Co-Simulation</span><span>Page 4 of 4</span></div>
-</div>
-
-<script>window.onload=function(){{window.print();}}</script>
-</body></html>"""
-    
-    st.download_button(
-            label="⬇️  Download Report → Print as PDF (A4)",
-            data=report_html.encode("utf-8"),
-            file_name="BattSim_Report.html",
-            mime="text/html",
-            type="primary",
-            use_container_width=False,
+if st.button("📥  Generate PDF Report", use_container_width=False, type="secondary"):
+    with st.spinner("Building charts and PDF..."):
+        pdf_bytes = generate_pdf_report(
+            log, t_h, sigma, cyc_pk, noise_std, n_cycles, cl, N,
+            v_rmse, s_rmse, chem, chem_name, Q_nom, protocol_label,
+            c_rate, p0_scale, q_scale, r_scale, last_Ck, last_Kk,
+            engineering_assessment(log, noise_std, n_cycles, cyc_pk)
         )
+    st.download_button(
+        label="✅  Download PDF Report",
+        data=pdf_bytes,
+        file_name=f"BattSim_{chem_name.split('—')[0].strip().replace(' ','_')}.pdf",
+        mime="application/pdf",
+        type="primary",
+        use_container_width=False,
+    )
+
+# ================================================================
+# Footer
+# ================================================================
+st.markdown("""
+<div class='footer-bar'>
+  🔋 <b>BattSim v4.2</b> — DFN ↔ EKF Digital Twin Co-Simulation &nbsp;|&nbsp;
+  Eng. Thaer Abushawar &nbsp;|&nbsp;
+  Plett (2004) · Chen et al. (2020) · Coman et al. (2022)
+</div>""", unsafe_allow_html=True)
+
 
 
 
