@@ -8,3 +8,4 @@ casadi
 anytree
 reportlab
 matplotlib
+kaleido==0.2.1
