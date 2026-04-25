@@ -890,10 +890,12 @@ if st.button("🚀  Train PINN Corrector", type="primary", use_container_width=F
 
     # Corrected SOC via OCV inversion (simple lookup)
     ocv_arr = np.array(chem["ocv_lut"])
-    soc_arr = np.array(chem["soc_lut"])
-    soc_corrected = np.interp(
-        np.clip(V_corrected, ocv_arr.min(), ocv_arr.max()),
-        ocv_arr, soc_arr)
+    dV_correction = V_corrected - log["V_est"]
+    dSOC_correction = dV_correction / np.array(
+        [float(docv_dsoc(make_ocv(chem), np.clip(s,0.05,0.95)))
+         for s in log["soc_est"]])  
+    soc_corrected = np.clip(log["soc_est"] + dSOC_correction * 0.1, 0, 1)
+
 
     # ── Metrics comparison ────────────────────────────────────
     v_rmse_ecm   = np.sqrt(np.mean((log["V_true"] - V_ecm)**2)) * 1000
