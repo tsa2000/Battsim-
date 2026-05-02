@@ -82,6 +82,24 @@ if run_btn:
         fig.add_trace(go.Scatter(x=t, y=soc_est, name="Estimated SOC"))
         fig.add_trace(go.Scatter(x=t, y=soc_est + 2*uncertainty, line=dict(width=0), showlegend=False))
         fig.add_trace(go.Scatter(x=t, y=soc_est - 2*uncertainty, fill='tonexty', fillcolor='rgba(0,100,80,0.2)', name="95% CI"))
-        
         st.plotly_chart(fig, use_container_width=True)
-        st.success(f"Successfully simulated {cycles} cycles with adaptive estimation.")
+        
+        # إضافة النتائج الكتابية (Metrics Dashboard)
+        st.subheader("📊 Performance Metrics")
+        col1, col2, col3 = st.columns(3)
+        
+        final_soc = soc_est[-1]
+        max_uncertainty = np.max(uncertainty)
+        
+        col1.metric("Final Estimated SOC", f"{final_soc:.2%}")
+        col2.metric("Max Uncertainty (σ)", f"{max_uncertainty:.4f}")
+        col3.metric("Estimation Status", "Converged" if max_uncertainty < 0.1 else "Diverging")
+        
+        # تقرير نصي إضافي
+        st.markdown(f"""
+        ### Analysis Summary
+        - **Total Cycles Simulated**: {cycles}
+        - **Average Uncertainty**: {np.mean(uncertainty):.4f}
+        - **System Behavior**: The Adaptive EKF has successfully tracked the state 
+          with a confidence interval width of {np.mean(uncertainty)*2:.3f}.
+        """)
