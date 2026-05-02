@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 def run_multi_cycle_asset(cycles, noise):
     model = pybamm.lithium_ion.DFN(options={"thermal": "lumped"})
     params = pybamm.ParameterValues("Chen2020")
-    # محاكاة 50 دورة كاملة شحن وتفريغ
+    # محاكاة دورات الشحن والتفريغ
     exp = pybamm.Experiment(["Discharge at 1C until 2.5V", "Charge at 1C until 4.2V"] * cycles)
     sim = pybamm.Simulation(model, parameter_values=params, experiment=exp)
     sol = sim.solve()
@@ -21,7 +21,7 @@ def run_multi_cycle_asset(cycles, noise):
     return t, v_meas, i_meas, float(params["Nominal cell capacity [A.h]"])
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. DIGITAL TWIN: AEKF ENGINE (Adaptive State Estimation)
+# 2. DIGITAL TWIN: AEKF ENGINE (Corrected Linear Algebra)
 # ─────────────────────────────────────────────────────────────────────────────
 class AdaptiveTwin:
     def __init__(self, Q_nom):
@@ -32,7 +32,7 @@ class AdaptiveTwin:
         self.R = np.array([[1e-3]])
 
     def step(self, V_m, I, dt):
-        # Adaptive Parameter: المقاومة تتغير مع الـ SOC
+        # Adaptive Parameter: تغير المقاومة مع الـ SOC
         R0 = 0.05 + 0.02 * (1 - self.x[0])
         
         # Predict
@@ -42,18 +42,20 @@ class AdaptiveTwin:
         # Update
         H = np.array([[1.0, -1.0, -1.0]])
         V_est = 3.7 - self.x[1] - self.x[2] - I * R0
-        nu = V_m - V_est
+        
+        # تصحيح جبري: تحويل nu إلى مصفوفة (1x1) للضرب المصفوفي
+        nu = np.array([[V_m - V_est]])
         S = H @ self.P @ H.T + self.R
-        K = self.P @ H.T / S[0,0]
+        K = self.P @ H.T @ np.linalg.inv(S)
         
         self.x += (K @ nu).flatten()
-        self.P = (np.eye(3) - K.reshape(3,1) @ H) @ self.P
+        self.P = (np.eye(3) - K @ H) @ self.P
         
-        # Uncertainty Propagation
+        # Uncertainty: الجذر التربيعي للتباين
         return self.x[0], np.sqrt(self.P[0,0])
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. STREAMLIT INTERFACE
+# 3. INTERFACE
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Battery Digital Twin", layout="wide")
 st.title("🔋 Research-Grade 50-Cycle Digital Twin")
