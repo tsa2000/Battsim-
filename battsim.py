@@ -8,7 +8,7 @@ def run_dfn(c_rate):
     model = pybamm.lithium_ion.DFN()
     param = pybamm.ParameterValues("Chen2020")
     exp = pybamm.Experiment([f"Discharge at {c_rate}C until 2.5V", "Rest for 5 min"])
-    sim = pybamm.Simulation(model, parameter_values=params=param, experiment=exp)
+    sim = pybamm.Simulation(model, parameter_values=param, experiment=exp)
     sol = sim.solve(initial_soc=1.0)
     t, V, I = sol["Time [s]"].entries, sol["Terminal voltage [V]"].entries, sol["Current [A]"].entries
     # استخراج SOC (الطريقة الصحيحة والفيزيائية)
