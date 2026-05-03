@@ -27,37 +27,20 @@ class BatteryConfig:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class OCVModel:
-    def __init__(self, n_points=201):
-        self.soc_lut = np.linspace(0.0, 1.0, n_points)
-        self.ocv_lut = np.clip(
-            3.4043
-            + 1.6227 * self.soc_lut
-            - 8.6635 * self.soc_lut**2
-            + 21.3955 * self.soc_lut**3
-            - 25.7324 * self.soc_lut**4
-            + 12.0032 * self.soc_lut**5,
-            2.5,
-            4.25,
-        )
+    def __init__(self):
+        self.soc_lut = np.array([0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0])
+        self.ocv_lut = np.array([2.70, 3.35, 3.48, 3.55, 3.62, 3.69, 3.76, 3.83, 3.91, 4.00, 4.09, 4.14, 4.19])
 
     def get_voltage(self, soc):
         return np.interp(np.clip(soc, 0.0, 1.0), self.soc_lut, self.ocv_lut)
 
     def get_gradient_analytical(self, soc):
-        s = np.clip(soc, 0.0, 1.0)
-        return (
-            1.6227
-            - 2 * 8.6635 * s
-            + 3 * 21.3955 * s**2
-            - 4 * 25.7324 * s**3
-            + 5 * 12.0032 * s**4
-        )
+        eps = 1e-4
+        v1 = self.get_voltage(soc + eps)
+        v2 = self.get_voltage(soc - eps)
+        return (v1 - v2) / (2 * eps)
 
     def get_entropic_coeff(self, soc):
-        """
-        Entropic heat coefficient dU/dT for NMC622 [V/K]
-        4th-order polynomial fit (range: -0.35 to +0.2 mV/K)
-        """
         s = np.clip(soc, 0.0, 1.0)
         return (-0.35 + 2.5*s - 6.0*s**2 + 5.5*s**3 - 1.8*s**4) * 1e-3
 
