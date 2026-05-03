@@ -101,8 +101,10 @@ class PhysicalAsset:
         current_meas = current + rng.normal(0, noise_current, len(time))
 
         Q_nominal = float(params["Nominal cell capacity [A.h]"])
-        soc_true = np.clip(1.0 - discharge_capacity / Q_nominal, 0.0, 1.0)
-
+        dt_array = np.diff(time, prepend=time[0])
+        discharged_ah = np.cumsum(current * dt_array) / 3600.0
+        soc_true = np.clip(1.0 - discharged_ah / Q_nominal, 0.0, 1.0)
+        
         return {
             "time": time,
             "voltage_true": voltage_true,
@@ -521,7 +523,6 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params,
 
     n = min(len(time), len(V_meas), len(T_meas), len(I_meas))
     time, V_meas, T_meas, I_meas = time[:n], V_meas[:n], T_meas[:n], I_meas[:n]
-    dt = float(np.mean(np.diff(time))) if n > 1 else dt_hint
 
     def _make_ecm():
         return EquivalentCircuitModel(
@@ -564,8 +565,18 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params,
         results["dual"] = {**_empty(), "R0_est": [], "sigma_R0": []}
 
     for k in range(n):
-        y = np.array([V_meas[k], T_meas[k]])
-        I = float(I_meas[k])
+    y = np.array([V_meas[k], T_meas[k]])
+    I = float(I_meas[k])
+
+    if k == 0:
+        dt = time[1] - time[0] if n > 1 else 1.0
+    else:
+        dt = time[k] - time[k-1]
+
+    if dt <= 0:
+        dt = 1e-3
+
+
 
         def _append(name, out):
             r = results[name]
