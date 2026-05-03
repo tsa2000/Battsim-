@@ -140,8 +140,15 @@ class PhysicalAsset:
         current_meas = current + rng.normal(0, noise_current, len(time))
         
         # Calculate true SOC from capacity
+        # CRITICAL: PyBaMM convention - negative current = discharge
+        # We need to flip the sign for our ECM (positive = discharge)
         Q_nominal = float(params["Nominal cell capacity [A.h]"])
-        soc_true = 1.0 - (discharge_capacity / Q_nominal)
+        
+        # Compute SOC by integrating current (Coulomb counting)
+        dt_array = np.diff(time, prepend=time[0])
+        # Flip sign: PyBaMM negative discharge → our positive discharge
+        charge_throughput = np.cumsum(current * dt_array / 3600.0)  # Ah (negative accumulates)
+        soc_true = np.clip(1.0 + (charge_throughput / Q_nominal), 0.0, 1.0)  # 1.0 + negative = decrease
         
         return {
             'time': time,
@@ -667,7 +674,8 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params, dt_hint=1.0):
     # Run filters in parallel
     for k in range(n_steps):
         y = np.array([V_meas[k], T_meas[k]])
-        I = float(I_meas[k])
+        # CRITICAL: Flip current sign (PyBaMM negative discharge → ECM positive discharge)
+        I = -float(I_meas[k])  # Negative sign to convert conventions
         
         # AEKF step
         aekf_out = aekf.step(y, I, dt)
