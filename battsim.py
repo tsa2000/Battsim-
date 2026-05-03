@@ -622,15 +622,18 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params, dt_hint=1.0):
         Dictionary containing time series for AEKF, UKF, and PF estimates
     """
     
-    # Extract asset data
-    time = asset_data['time']
-    V_meas = asset_data['voltage_meas']
-    T_meas = asset_data['temp_meas']
-    I_meas = asset_data['current_meas']
+    # Extract asset data and ensure numpy arrays (flatten if needed)
+    time = np.asarray(asset_data['time']).flatten()
+    V_meas = np.asarray(asset_data['voltage_meas']).flatten()
+    T_meas = np.asarray(asset_data['temp_meas']).flatten()
+    I_meas = np.asarray(asset_data['current_meas']).flatten()
     
     # Ensure consistent length
     n_steps = min(len(time), len(V_meas), len(T_meas), len(I_meas))
     time = time[:n_steps]
+    V_meas = V_meas[:n_steps]
+    T_meas = T_meas[:n_steps]
+    I_meas = I_meas[:n_steps]
     
     # Compute timestep
     dt = float(np.mean(np.diff(time))) if n_steps > 1 else dt_hint
