@@ -621,12 +621,19 @@ class UQMetrics:
 # MAIN SIMULATION RUNNER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def run_digital_twin_system(asset_data, ecm_params, filter_params, dt_hint=1.0):
+def run_digital_twin_system(asset_data, ecm_params, filter_params, enable_pf=True, dt_hint=1.0):
     """
-    Execute Digital Twin with all three filters in parallel
+    Execute Digital Twin with AEKF, UKF, and optionally PF
+    
+    Args:
+        asset_data: Dictionary containing sensor measurements from physical asset
+        ecm_params: ECM model parameters
+        filter_params: Filter tuning parameters
+        enable_pf: If True, run Particle Filter (slower). If False, skip PF.
+        dt_hint: Fallback timestep if cannot compute from data
     
     Returns:
-        Dictionary containing time series for AEKF, UKF, and PF estimates
+        Dictionary containing time series for enabled filters
     """
     
     # Extract asset data and ensure numpy arrays (flatten if needed)
@@ -660,16 +667,23 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params, dt_hint=1.0):
                        filter_params['Q'], filter_params['R'])
     ukf = UnscentedKalmanFilter(ecm, x0, filter_params['P0'],
                                  filter_params['Q'], filter_params['R'])
-    pf = ParticleFilter(ecm, x0, filter_params['P0'],
-                        filter_params['Q'], filter_params['R'],
-                        n_particles=filter_params.get('n_particles', 500))
+    
+    # Initialize PF only if enabled
+    if enable_pf:
+        pf = ParticleFilter(ecm, x0, filter_params['P0'],
+                            filter_params['Q'], filter_params['R'],
+                            n_particles=filter_params.get('n_particles', 500))
+    else:
+        pf = None
     
     # Storage for results
     results = {
         'aekf': {'soc': [], 'sigma': [], 'temp': [], 'innov': [], 'nis': []},
-        'ukf': {'soc': [], 'sigma': [], 'temp': [], 'innov': [], 'nis': []},
-        'pf': {'soc': [], 'sigma': [], 'temp': [], 'innov': [], 'particles': []}
+        'ukf': {'soc': [], 'sigma': [], 'temp': [], 'innov': [], 'nis': []}
     }
+    
+    if enable_pf:
+        results['pf'] = {'soc': [], 'sigma': [], 'temp': [], 'innov': [], 'particles': []}
     
     # Run filters in parallel
     for k in range(n_steps):
@@ -693,14 +707,15 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params, dt_hint=1.0):
         results['ukf']['innov'].append(ukf_out['innovation_voltage'])
         results['ukf']['nis'].append(ukf_out['nis'])
         
-        # PF step
-        pf_out = pf.step(y, I, dt)
-        results['pf']['soc'].append(pf_out['soc'])
-        results['pf']['sigma'].append(pf_out['sigma_soc'])
-        results['pf']['temp'].append(pf_out['temp'])
-        results['pf']['innov'].append(pf_out['innovation_voltage'])
-        if k % 50 == 0:  # Store particles periodically (memory efficiency)
-            results['pf']['particles'].append(pf_out['particles'])
+        # PF step (only if enabled)
+        if enable_pf:
+            pf_out = pf.step(y, I, dt)
+            results['pf']['soc'].append(pf_out['soc'])
+            results['pf']['sigma'].append(pf_out['sigma_soc'])
+            results['pf']['temp'].append(pf_out['temp'])
+            results['pf']['innov'].append(pf_out['innovation_voltage'])
+            if k % 50 == 0:  # Store particles periodically (memory efficiency)
+                results['pf']['particles'].append(pf_out['particles'])
     
     # Convert to numpy arrays
     for filter_name in ['aekf', 'ukf', 'pf']:
@@ -714,7 +729,7 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params, dt_hint=1.0):
 # VISUALIZATION — Publication-Quality Plots
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def create_comprehensive_plots(time, asset_data, results):
+def create_comprehensive_plots(time, asset_data, results, enable_pf=True):
     """Generate multi-panel publication-ready visualization"""
     
     soc_true = asset_data['soc_true']
@@ -725,8 +740,10 @@ def create_comprehensive_plots(time, asset_data, results):
     aekf_lower = results['aekf']['soc'] - 2 * results['aekf']['sigma']
     ukf_upper = results['ukf']['soc'] + 2 * results['ukf']['sigma']
     ukf_lower = results['ukf']['soc'] - 2 * results['ukf']['sigma']
-    pf_upper = results['pf']['soc'] + 2 * results['pf']['sigma']
-    pf_lower = results['pf']['soc'] - 2 * results['pf']['sigma']
+    
+    if enable_pf:
+        pf_upper = results['pf']['soc'] + 2 * results['pf']['sigma']
+        pf_lower = results['pf']['soc'] - 2 * results['pf']['sigma']
     
     # Create subplots
     fig = make_subplots(
@@ -790,25 +807,26 @@ def create_comprehensive_plots(time, asset_data, results):
         row=1, col=1
     )
     
-    # PF
-    fig.add_trace(
-        go.Scatter(x=time, y=results['pf']['soc'], name="PF",
-                   line=dict(color='#06A77D', dash='dashdot', width=2),
-                   legendgroup='soc'),
-        row=1, col=1
-    )
-    fig.add_trace(
-        go.Scatter(x=time, y=pf_upper, fill=None, mode='lines',
-                   line=dict(width=0), showlegend=False, legendgroup='soc'),
-        row=1, col=1
-    )
-    fig.add_trace(
-        go.Scatter(x=time, y=pf_lower, fill='tonexty',
-                   fillcolor='rgba(6, 167, 125, 0.15)',
-                   line=dict(width=0), name="PF 95% CI",
-                   legendgroup='soc'),
-        row=1, col=1
-    )
+    # PF (only if enabled)
+    if enable_pf:
+        fig.add_trace(
+            go.Scatter(x=time, y=results['pf']['soc'], name="PF",
+                       line=dict(color='#06A77D', dash='dashdot', width=2),
+                       legendgroup='soc'),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(x=time, y=pf_upper, fill=None, mode='lines',
+                       line=dict(width=0), showlegend=False, legendgroup='soc'),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(x=time, y=pf_lower, fill='tonexty',
+                       fillcolor='rgba(6, 167, 125, 0.15)',
+                       line=dict(width=0), name="PF 95% CI",
+                       legendgroup='soc'),
+            row=1, col=1
+        )
     
     # === ROW 2: Uncertainty Evolution ===
     fig.add_trace(
@@ -823,12 +841,13 @@ def create_comprehensive_plots(time, asset_data, results):
                    legendgroup='sigma'),
         row=2, col=1
     )
-    fig.add_trace(
-        go.Scatter(x=time, y=results['pf']['sigma'], name="σ(PF)",
-                   line=dict(color='#06A77D', width=2),
-                   legendgroup='sigma'),
-        row=2, col=1
-    )
+    if enable_pf:
+        fig.add_trace(
+            go.Scatter(x=time, y=results['pf']['sigma'], name="σ(PF)",
+                       line=dict(color='#06A77D', width=2),
+                       legendgroup='sigma'),
+            row=2, col=1
+        )
     
     # === ROW 3: Temperature ===
     fig.add_trace(
@@ -857,12 +876,13 @@ def create_comprehensive_plots(time, asset_data, results):
                    legendgroup='innov'),
         row=4, col=1
     )
-    fig.add_trace(
-        go.Scatter(x=time, y=results['pf']['innov'], name="ν(PF)",
-                   line=dict(color='#06A77D', width=1.5),
-                   legendgroup='innov'),
-        row=4, col=1
-    )
+    if enable_pf:
+        fig.add_trace(
+            go.Scatter(x=time, y=results['pf']['innov'], name="ν(PF)",
+                       line=dict(color='#06A77D', width=1.5),
+                       legendgroup='innov'),
+            row=4, col=1
+        )
     fig.add_hline(y=0, line_dash="dot", line_color="gray", row=4, col=1)
     
     # === ROW 5: NIS Consistency ===
@@ -1092,9 +1112,20 @@ def main():
             st.markdown("**Initial Covariance P₀**")
             p_soc = st.number_input("P₀ — SOC", 1e-4, 1.0, 0.01, format="%.4f")
             p_t = st.number_input("P₀ — T_core", 0.1, 5.0, 0.5, format="%.2f")
+        
+        with st.expander("⚡ Performance Options", expanded=True):
+            st.markdown("**Enable/Disable Filters**")
+            enable_pf = st.checkbox("Enable Particle Filter (PF)", value=False,
+                                   help="⚠️ PF is computationally expensive (~3-5x slower). Disable for faster results.")
             
-            st.markdown("**Particle Filter**")
-            n_particles = st.number_input("Number of Particles", 100, 2000, 500, 50)
+            if enable_pf:
+                st.markdown("**Particle Filter Settings**")
+                n_particles = st.number_input("Number of Particles", 100, 2000, 500, 50,
+                                             help="More particles = higher accuracy but slower")
+                st.info(f"⏱️ Estimated runtime with PF: ~{5 + cycles}  minutes")
+            else:
+                n_particles = 500  # Default (not used)
+                st.success("⚡ Fast mode: AEKF + UKF only (~2-3 minutes)")
         
         st.markdown("---")
         run_button = st.button("▶ Execute Digital Twin System", 
@@ -1131,7 +1162,7 @@ def main():
             'n_particles': n_particles
         }
         
-        results = run_digital_twin_system(asset_data, ecm_params, filter_params)
+        results = run_digital_twin_system(asset_data, ecm_params, filter_params, enable_pf)
         
         # Step 3: Analysis
         status_text.text("📊 Computing UQ Metrics...")
@@ -1141,7 +1172,11 @@ def main():
         
         # Compute metrics
         metrics = {}
-        for filter_name in ['aekf', 'ukf', 'pf']:
+        filters_to_evaluate = ['aekf', 'ukf']
+        if enable_pf:
+            filters_to_evaluate.append('pf')
+        
+        for filter_name in filters_to_evaluate:
             soc_est = results[filter_name]['soc']
             sigma = results[filter_name]['sigma']
             
@@ -1165,7 +1200,7 @@ def main():
         status_text.text("📈 Generating Visualizations...")
         progress_bar.progress(90)
         
-        fig = create_comprehensive_plots(asset_data['time'], asset_data, results)
+        fig = create_comprehensive_plots(asset_data['time'], asset_data, results, enable_pf)
         
         progress_bar.progress(100)
         status_text.text("✅ Digital Twin Execution Complete!")
