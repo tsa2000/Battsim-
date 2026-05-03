@@ -565,16 +565,16 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params,
         results["dual"] = {**_empty(), "R0_est": [], "sigma_R0": []}
 
     for k in range(n):
-    y = np.array([V_meas[k], T_meas[k]])
-    I = float(I_meas[k])
-
-    if k == 0:
-        dt = time[1] - time[0] if n > 1 else 1.0
-    else:
-        dt = time[k] - time[k-1]
-
-    if dt <= 0:
-        dt = 1e-3
+        y = np.array([V_meas[k], T_meas[k]])
+        I = float(I_meas[k])
+    
+        if k == 0:
+            dt = time[1] - time[0] if n > 1 else 1.0
+        else:
+            dt = time[k] - time[k-1]
+    
+        if dt <= 0:
+            dt = 1e-3
 
 
 
