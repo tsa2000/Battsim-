@@ -565,7 +565,7 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params,
 
     for k in range(n):
         y = np.array([V_meas[k], T_meas[k]])
-        I = -float(I_meas[k])
+        I = float(I_meas[k])
 
         def _append(name, out):
             r = results[name]
@@ -607,7 +607,7 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params,
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def reconstruct_voltage(ecm, soc, v1, v2, temp, current_meas):
-    I_ecm = -np.asarray(current_meas)
+    I_ecm = np.asarray(current_meas)
     v_out = np.zeros_like(soc)
     for k in range(len(soc)):
         v_out[k] = ecm.measurement_model(
