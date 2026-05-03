@@ -198,15 +198,18 @@ def run_twin(t, V_m, T_m, I, Q_nom,
              R0, R1, C1, R2, C2, R_th, C_th, T_amb,
              P0_diag, Q_diag, R_diag):
 
-    dt   = float(np.mean(np.diff(t))) if len(t) > 1 else 1.0
-    Qn   = np.diag(Q_diag)
-    Rn   = np.diag(R_diag)
+    length = min(len(t), len(V_m), len(T_m), len(I))
+    t = t[:length]
+    V_m = V_m[:length]
+    T_m = T_m[:length]
+    I = I[:length]
 
-    # AEKF
+    dt = float(np.mean(np.diff(t))) if length > 1 else 1.0
+    Qn = np.diag(Q_diag)
+    Rn = np.diag(R_diag)
+
     ekf  = AEKF(Q_nom, R0, R1, C1, R2, C2, R_th, C_th, T_amb,
                 P0_diag, Q_diag, R_diag)
-
-    # UT
     ut   = UnscentedTransform(n=4)
     x_ut = np.array([1.0, 0.0, 0.0, T_amb])
     P_ut = np.diag(P0_diag)
