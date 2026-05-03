@@ -601,7 +601,7 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params,
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def reconstruct_voltage(ecm, soc, v1, v2, temp, current_meas, r0_arr=None):
-    I_ecm = -np.asarray(current_meas)
+    I_ecm = np.asarray(current_meas)
     v_out = np.zeros_like(soc)
     original_R0 = ecm.R0
 
