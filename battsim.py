@@ -600,13 +600,19 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params,
 # VOLTAGE RECONSTRUCTION & METRICS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def reconstruct_voltage(ecm, soc, v1, v2, temp, current_meas):
-    I_ecm = np.asarray(current_meas)
+def reconstruct_voltage(ecm, soc, v1, v2, temp, current_meas, r0_arr=None):
+    I_ecm = -np.asarray(current_meas)
     v_out = np.zeros_like(soc)
+    original_R0 = ecm.R0
+
     for k in range(len(soc)):
+        if r0_arr is not None and len(r0_arr) > k:
+            ecm.R0 = r0_arr[k]
         v_out[k] = ecm.measurement_model(
             np.array([soc[k], v1[k], v2[k], temp[k]]), I_ecm[k]
         )[0]
+
+    ecm.R0 = original_R0
     return v_out
 
 
@@ -618,14 +624,15 @@ def compute_metrics(asset_data, results, ecm, enable_pf=True, enable_dual=True):
     cutoff = int(0.10 * len(soc_true))
 
     active = ["aekf", "ukf"]
-    if enable_pf    and "pf"   in results: active.append("pf")
-    if enable_dual  and "dual" in results: active.append("dual")
+    if enable_pf   and "pf"   in results: active.append("pf")
+    if enable_dual and "dual" in results: active.append("dual")
 
     metrics = {}
     for name in active:
         r = results[name]
+        r0_arr  = r.get("R0_est", None)
         v_model = reconstruct_voltage(ecm, r["soc"], r["v1"], r["v2"],
-                                      r["temp"], I_meas)
+                                      r["temp"], I_meas, r0_arr)
         m = {
             "rmse_soc":  UQMetrics.rmse(r["soc"][cutoff:], soc_true[cutoff:]) * 100,
             "mae_soc":   UQMetrics.mae( r["soc"][cutoff:], soc_true[cutoff:]) * 100,
@@ -646,6 +653,7 @@ def compute_metrics(asset_data, results, ecm, enable_pf=True, enable_dual=True):
         metrics[name] = m
 
     return metrics, cutoff
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
