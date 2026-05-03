@@ -439,47 +439,46 @@ class DualEKF:
         # ── 1. Parameter time-update (random-walk prior) ──────────
         w_pred   = self.w.copy()
         P_w_pred = self.P_w + self.Q_w
-
+    
         # Inject current R0 estimate into ECM before state update
         self.state_filter.ecm.R0 = float(w_pred[0])
-
+    
         # ── 2. State predict & update (AEKF) ──────────────────────
         state_out = self.state_filter.step(y_meas, I, dt)
         soc_k, _, _, T_k = self.state_filter.x
-
+    
         # ── 3. Parameter measurement-update ───────────────────────
         arr_k   = self.state_filter.ecm.arrhenius_correction(T_k)
         soc_fac = 1.0 + 0.4 * (1.0 - soc_k)**2
-
+    
         # Jacobian: ∂V_terminal/∂R0_base = -I · soc_fac · arr_k
         dV_dR0 = -I * soc_fac * arr_k
-        H_w = np.array([[dV_dR0],   # voltage measurement
-                        [0.0  ]])   # temperature: independent of R0
-
+        H_w = np.array([[dV_dR0, 0.0]])   # shape (1, 2) - one parameter, two measurements
+    
         # Innovation using latest state estimate
         y_hat  = self.state_filter.ecm.measurement_model(self.state_filter.x, I)
         innov_w = y_meas - y_hat                   # shape (2,)
-
+    
         # Kalman gain  K_w : (1,2)
-        S_w = H_w @ P_w_pred @ H_w.T + self.R_w   # (2,2)
+        S_w = H_w @ self.R_w @ H_w.T + P_w_pred   # (1,1)
         try:
-            K_w = P_w_pred @ H_w.T @ np.linalg.inv(S_w)  # (1,2)
+            K_w = P_w_pred @ H_w.T @ np.linalg.inv(S_w)  # (1,1) @ (2,1) @ (1,1) = (1,2)
         except np.linalg.LinAlgError:
             K_w = np.zeros((1, 2))
-
+    
         self.w   = w_pred + (K_w @ innov_w).flatten()
         self.w[0] = np.clip(self.w[0], 5e-3, 0.1)  # physical bounds [Ω]
-
-        I_KH = np.eye(1) - K_w @ H_w              # Joseph-like scalar
+    
+        I_KH = np.eye(1) - K_w @ H_w              # (1,1) - (1,2) @ (1,2).T = (1,1)
         self.P_w = I_KH @ P_w_pred @ I_KH.T + K_w @ self.R_w @ K_w.T
-
+    
         self._R0_history.append(float(self.w[0]))
         state_out["R0_est"]    = float(self.w[0])
         state_out["sigma_R0"]  = float(np.sqrt(max(self.P_w[0, 0], 0.0)))
-
+    
         return state_out
-
-
+    
+    
 # ═══════════════════════════════════════════════════════════════════════════════
 # UQ METRICS
 # ═══════════════════════════════════════════════════════════════════════════════
