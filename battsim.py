@@ -802,100 +802,100 @@ def main():
 
         run_btn = st.button("🚀 Run Simulation", use_container_width=True)
 
-if 'sim_results' not in st.session_state:
-    st.session_state['sim_results'] = None
-
-if run_btn:
-    bar = st.progress(0)
-    stat = st.empty()
-
-    stat.text("🔬 Running DFN simulation...")
-    bar.progress(10)
-    asset_data = PhysicalAsset(BatteryConfig()).simulate(cycles, c_rate, noise_v, noise_t, noise_i)
-
-    ecm_params = dict(R0=R0, R1=R1, C1=C1, R2=R2, C2=C2, R_th=R_th, C_th=C_th, T_amb=T_amb)
-    filter_params = dict(P0=P0_vals, Q=Q_vals, R=R_vals, Q_w=[q_w_val])
-
-    stat.text("🧠 Running filters...")
-    bar.progress(40)
-    results, ecm_ref, dual_ekf = run_digital_twin_system(asset_data, ecm_params, filter_params, enable_dual=enable_dual)
-
-    stat.text("📊 Computing metrics...")
-    bar.progress(60)
-    metrics, cutoff = compute_metrics(asset_data, results, ecm_ref, enable_dual=enable_dual)
-
-    stat.text("📈 Cycle-by-cycle analysis...")
-    bar.progress(75)
-    cycle_df = analyze_cycles(asset_data, results, ecm_ref, enable_dual=enable_dual)
-
-    stat.text("🎨 Rendering plots...")
-    bar.progress(90)
-    fig = create_comprehensive_plots(asset_data["time"], asset_data, results, enable_dual=enable_dual)
-
-    bar.progress(100)
-    stat.success("✅ Simulation complete!")
-
-    st.session_state['sim_results'] = {
-        "asset_data": asset_data,
-        "results": results,
-        "metrics": metrics,
-        "cycle_df": cycle_df,
-        "ecm_params": ecm_params,
-        "filter_params": filter_params,
-        "fig": fig,
-        "enable_dual": enable_dual
-    }
-
-if st.session_state['sim_results'] is not None:
-    data = st.session_state['sim_results']
-
-    st.subheader("📊 Key Performance Indicators")
-    kpi_cols = st.columns(4)
-    with kpi_cols[0]:
-        best_f = min(data['metrics'].keys(), key=lambda k: data['metrics'][k]['rmse_soc'])
-        st.metric("Best SOC RMSE", f"{data['metrics'][best_f]['rmse_soc']:.4f}%", delta=best_f.upper())
-    with kpi_cols[1]:
-        best_v = min(data['metrics'].keys(), key=lambda k: data['metrics'][k]['rmse_volt'])
-        st.metric("Best Voltage RMSE", f"{data['metrics'][best_v]['rmse_volt']:.2f} mV", delta=best_v.upper())
-    with kpi_cols[2]:
-        if data['enable_dual'] and "dual" in data['results']:
-            final_r0 = data['results']["dual"]["R0_est"][-1] * 1000
-            st.metric("Final R₀", f"{final_r0:.2f} mΩ")
-        else:
-            st.metric("Status", "Stable")
-    with kpi_cols[3]:
-        avg_picp = np.mean([data['metrics'][k]['picp'] for k in data['metrics'].keys()])
-        st.metric("Avg PICP", f"{avg_picp:.1f}%")
-
-    st.plotly_chart(data['fig'], use_container_width=True)
-
-    st.subheader("🎯 Filter Performance Comparison")
-    f_names = ["aekf", "ukf"] + (["dual"] if data['enable_dual'] and "dual" in data['metrics'] else [])
-    cols = st.columns(len(f_names))
-    for col, name in zip(cols, f_names):
-        m = data['metrics'][name]
-        with col:
-            st.markdown(f"**{name.upper()}**")
-            st.write(f"SOC RMSE: {m['rmse_soc']:.4f}%")
-            st.write(f"Volt RMSE: {m['rmse_volt']:.2f} mV")
-
-    st.subheader("📋 Cycle-by-Cycle Analysis")
-    st.dataframe(data['cycle_df'], use_container_width=True)
-
-    st.subheader("📄 Export Report")
-    with st.spinner("Preparing document..."):
-        pdf_buffer = generate_pdf_report(
-            data["asset_data"], data["results"], data["metrics"],
-            data["cycle_df"], data["ecm_params"],
-            data["filter_params"], data["enable_dual"]
-        )
-        st.download_button(
-            label="⬇️ Download Technical Report (PDF)",
-            data=pdf_buffer,
-            file_name="battery_digital_twin_report.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
+    if 'sim_results' not in st.session_state:
+        st.session_state['sim_results'] = None
+    
+    if run_btn:
+        bar = st.progress(0)
+        stat = st.empty()
+    
+        stat.text("🔬 Running DFN simulation...")
+        bar.progress(10)
+        asset_data = PhysicalAsset(BatteryConfig()).simulate(cycles, c_rate, noise_v, noise_t, noise_i)
+    
+        ecm_params = dict(R0=R0, R1=R1, C1=C1, R2=R2, C2=C2, R_th=R_th, C_th=C_th, T_amb=T_amb)
+        filter_params = dict(P0=P0_vals, Q=Q_vals, R=R_vals, Q_w=[q_w_val])
+    
+        stat.text("🧠 Running filters...")
+        bar.progress(40)
+        results, ecm_ref, dual_ekf = run_digital_twin_system(asset_data, ecm_params, filter_params, enable_dual=enable_dual)
+    
+        stat.text("📊 Computing metrics...")
+        bar.progress(60)
+        metrics, cutoff = compute_metrics(asset_data, results, ecm_ref, enable_dual=enable_dual)
+    
+        stat.text("📈 Cycle-by-cycle analysis...")
+        bar.progress(75)
+        cycle_df = analyze_cycles(asset_data, results, ecm_ref, enable_dual=enable_dual)
+    
+        stat.text("🎨 Rendering plots...")
+        bar.progress(90)
+        fig = create_comprehensive_plots(asset_data["time"], asset_data, results, enable_dual=enable_dual)
+    
+        bar.progress(100)
+        stat.success("✅ Simulation complete!")
+    
+        st.session_state['sim_results'] = {
+            "asset_data": asset_data,
+            "results": results,
+            "metrics": metrics,
+            "cycle_df": cycle_df,
+            "ecm_params": ecm_params,
+            "filter_params": filter_params,
+            "fig": fig,
+            "enable_dual": enable_dual
+        }
+    
+    if st.session_state['sim_results'] is not None:
+        data = st.session_state['sim_results']
+    
+        st.subheader("📊 Key Performance Indicators")
+        kpi_cols = st.columns(4)
+        with kpi_cols[0]:
+            best_f = min(data['metrics'].keys(), key=lambda k: data['metrics'][k]['rmse_soc'])
+            st.metric("Best SOC RMSE", f"{data['metrics'][best_f]['rmse_soc']:.4f}%", delta=best_f.upper())
+        with kpi_cols[1]:
+            best_v = min(data['metrics'].keys(), key=lambda k: data['metrics'][k]['rmse_volt'])
+            st.metric("Best Voltage RMSE", f"{data['metrics'][best_v]['rmse_volt']:.2f} mV", delta=best_v.upper())
+        with kpi_cols[2]:
+            if data['enable_dual'] and "dual" in data['results']:
+                final_r0 = data['results']["dual"]["R0_est"][-1] * 1000
+                st.metric("Final R₀", f"{final_r0:.2f} mΩ")
+            else:
+                st.metric("Status", "Stable")
+        with kpi_cols[3]:
+            avg_picp = np.mean([data['metrics'][k]['picp'] for k in data['metrics'].keys()])
+            st.metric("Avg PICP", f"{avg_picp:.1f}%")
+    
+        st.plotly_chart(data['fig'], use_container_width=True)
+    
+        st.subheader("🎯 Filter Performance Comparison")
+        f_names = ["aekf", "ukf"] + (["dual"] if data['enable_dual'] and "dual" in data['metrics'] else [])
+        cols = st.columns(len(f_names))
+        for col, name in zip(cols, f_names):
+            m = data['metrics'][name]
+            with col:
+                st.markdown(f"**{name.upper()}**")
+                st.write(f"SOC RMSE: {m['rmse_soc']:.4f}%")
+                st.write(f"Volt RMSE: {m['rmse_volt']:.2f} mV")
+    
+        st.subheader("📋 Cycle-by-Cycle Analysis")
+        st.dataframe(data['cycle_df'], use_container_width=True)
+    
+        st.subheader("📄 Export Report")
+        with st.spinner("Preparing document..."):
+            pdf_buffer = generate_pdf_report(
+                data["asset_data"], data["results"], data["metrics"],
+                data["cycle_df"], data["ecm_params"],
+                data["filter_params"], data["enable_dual"]
+            )
+            st.download_button(
+                label="⬇️ Download Technical Report (PDF)",
+                data=pdf_buffer,
+                file_name="battery_digital_twin_report.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
 
 
 
