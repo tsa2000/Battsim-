@@ -885,7 +885,6 @@ class DigitalTwinPDF(FPDF):
 
 def generate_pdf_report(res):
     pdf = DigitalTwinPDF()
-    pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
     metrics = res["metrics"]
@@ -897,29 +896,27 @@ def generate_pdf_report(res):
     def safe_txt(text):
         return str(text).replace('σ', 'sigma').replace('Ω', 'Ohm').replace('χ²', 'chi^2').replace('₀', '0')
 
+    pdf.add_page()
     pdf.set_font("helvetica", "B", 12)
-    pdf.set_text_color(0, 0, 0)
-    pdf.cell(0, 10, "1. Executive Performance Summary (Steady-State)", ln=True)
-    pdf.set_font("helvetica", "", 10)
-    col_w, line_h = 45, 8
+    pdf.cell(0, 10, "1. Executive Performance Summary", ln=True)
     
+    col_w, line_h = 45, 8
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("helvetica", "B", 10)
     for head in ["Filter", "SOC RMSE (%)", "Voltage RMSE (mV)", "PICP (%)"]: 
         pdf.cell(col_w, line_h, safe_txt(head), border=1, fill=True, ln=(head=="PICP (%)"))
     
     pdf.set_font("helvetica", "", 10)
-    labels = {"aekf": "AEKF", "ukf": "UKF", "dual": "Dual EKF"}
     for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
         m = metrics[name]
-        pdf.cell(col_w, line_h, labels[name], border=1)
+        pdf.cell(col_w, line_h, name.upper(), border=1)
         pdf.cell(col_w, line_h, f"{m['rmse_soc']:.4f}", border=1)
         pdf.cell(col_w, line_h, f"{m['rmse_volt']:.2f}", border=1)
         pdf.cell(col_w, line_h, f"{m['picp']:.1f}", border=1, ln=True)
-    pdf.ln(10)
-
+    
+    pdf.ln(5)
     pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 10, "2. System Configuration & Filter Tuning", ln=True)
+    pdf.cell(0, 10, "2. System Configuration", ln=True)
     
     def draw_settings_table(title, data_dict):
         pdf.set_font("helvetica", "B", 9)
@@ -928,64 +925,61 @@ def generate_pdf_report(res):
         pdf.cell(95, 7, "Value", border=1, ln=True, fill=True)
         pdf.set_font("helvetica", "", 9)
         for k, v in data_dict.items():
-            pdf.cell(95, 6, safe_txt(str(k)), border=1)
-            pdf.cell(95, 6, safe_txt(str(v)), border=1, ln=True)
-        pdf.ln(5)
+            pdf.cell(95, 6, safe_txt(k), border=1)
+            pdf.cell(95, 6, safe_txt(v), border=1, ln=True)
+        pdf.ln(4)
 
     if settings:
-        draw_settings_table("Operating Conditions & Sensor Noise", {
-            "Cycles": settings["Cycles"],
-            "Discharge C-rate": settings["Discharge C-rate"], 
-            "Voltage Noise (sigma)": f"{settings['Voltage Noise σ [V]']} V",
-            "Temp Noise (sigma)": f"{settings['Temp Noise σ [K]']} K"
+        draw_settings_table("Operating Conditions", {
+            "Cycles": settings["Cycles"], 
+            "C-rate": settings["Discharge C-rate"]
         })
-        draw_settings_table("Equivalent Circuit Model (ECM)", {
-            "R0, R1, R2 [Ohm]": f"{settings['R0 [Ω]']}, {settings['R1 [Ω]']}, {settings['R2 [Ω]']}", 
-            "C1, C2 [F]": f"{settings['C1 [F]']}, {settings['C2 [F]']}",
-            "Ambient Temp [K]": settings['T_ambient [K]']
-        })
-        draw_settings_table("Filter Tuning Matrices (Diagonals)", {
-            "P0 [SOC, V1, V2, T]": str(settings["P0_diag"]),
-            "Q Process Noise": str(settings["Q_diag"]),
-            "R Meas. Noise": str(settings["R_diag"])
+        draw_settings_table("Filter Tuning", {
+            "Q SOC": settings["Q_diag"][0], 
+            "R Voltage": settings["R_diag"][0]
         })
 
     def add_plot(fig, title):
+        if pdf.get_y() > 150: 
+            pdf.add_page()
+        
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             pio.write_image(fig, tmp.name, format="png", width=1000, height=550, scale=2)
             pdf.set_font("helvetica", "B", 11)
-            pdf.cell(0, 8, safe_txt(title), ln=True)
-            pdf.image(tmp.name, x=15, w=180)
-            pdf.ln(5)
+            pdf.cell(0, 10, safe_txt(title), ln=True)
+            pdf.image(tmp.name, x=15, y=pdf.get_y(), w=180)
+            pdf.ln(105)
             os.remove(tmp.name)
 
+    if "fig" in res and res["fig"] is not None:
+        add_plot(res["fig"], "3. Multi-Filter Comparative Dashboard")
+
     pdf.add_page()
-    pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 10, "3. Filter UQ Analysis (AEKF Example)", ln=True)
     fig_aekf = go.Figure()
-    fig_aekf.add_trace(go.Scatter(x=time, y=(results["aekf"]["soc"] - res["asset_data"]["soc_true"])*100, name="Error (%)", line=dict(color="#A23B72")))
+    fig_aekf.add_trace(go.Scatter(x=time, y=(results["aekf"]["soc"] - res["asset_data"]["soc_true"])*100, name="Error", line=dict(color="#A23B72")))
     fig_aekf.add_trace(go.Scatter(x=time, y=2*results["aekf"]["sigma"]*100, name="+2sigma", line=dict(color="gray", dash="dot")))
-    fig_aekf.add_trace(go.Scatter(x=time, y=-2*results["aekf"]["sigma"]*100, name="-2sigma", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
-    fig_aekf.update_layout(title="AEKF Estimation Error vs Uncertainty (UQ)", yaxis_title="Error [%]", template="plotly_white", margin=dict(t=40, b=10, l=10, r=10))
-    add_plot(fig_aekf, "AEKF Error Tracking Bounds")
+    fig_aekf.add_trace(go.Scatter(x=time, y=-2*results["aekf"]["sigma"]*100, fill='tonexty', name="-2sigma", line=dict(color="gray", dash="dot")))
+    fig_aekf.update_layout(title="AEKF Error vs Uncertainty", template="plotly_white")
+    add_plot(fig_aekf, "4. AEKF Deep UQ Analysis")
 
     pdf.add_page()
     pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 10, "4. Cycle-by-Cycle Analysis", ln=True)
+    pdf.cell(0, 10, "5. Cycle-by-Cycle Detailed Metrics", ln=True)
     df = res["cycle_df"]
     col_w_s = 190 / len(df.columns)
     pdf.set_fill_color(240, 240, 240)
-    pdf.set_font("helvetica", "B", 8)
+    pdf.set_font("helvetica", "B", 7)
     for col in df.columns: 
-        pdf.cell(col_w_s, 8, safe_txt(str(col)[:15]), border=1, fill=True, align="C")
+        pdf.cell(col_w_s, 8, safe_txt(str(col)[:12]), border=1, fill=True, align="C")
     pdf.ln()
-    pdf.set_font("helvetica", "", 8)
+    pdf.set_font("helvetica", "", 7)
     for _, row in df.iterrows():
         for item in row: 
-            pdf.cell(col_w_s, 8, safe_txt(str(item)), border=1, align="C")
+            pdf.cell(col_w_s, 7, safe_txt(str(item)), border=1, align="C")
         pdf.ln()
 
     return bytes(pdf.output())
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STREAMLIT APP
