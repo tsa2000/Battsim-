@@ -1022,32 +1022,31 @@ def main():
     
         layout_args = dict(height=350, template="plotly_white", margin=dict(t=40, b=10, l=10, r=10))
     
-        # ── 🏆 EXECUTIVE SUMMARY ─────────────────────────────────────────────
+       # ── 🏆 EXECUTIVE SUMMARY ─────────────────────────────────────────────
         st.subheader("🏆 Global Performance Metrics (Steady-State)")
     
         filter_names = ["aekf", "ukf"]
         if enable_dual and "dual" in metrics:
             filter_names.append("dual")
+        labels = {"aekf": "🎯 AEKF", "ukf": "🧠 UKF", "dual": "⚡ Dual EKF"}
     
-        top_cols = st.columns(len(filter_names))
-        labels   = {"aekf": "🎯 AEKF", "ukf": "🧠 UKF", "dual": "⚡ Dual EKF"}
-    
-        for col, name in zip(top_cols, filter_names):
+        for name in filter_names:
             m = metrics[name]
-            with col:
-                st.markdown(f"### {labels[name]}")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.metric("SOC RMSE",  f"{m['rmse_soc']:.4f} %")
-                    st.metric("Volt RMSE", f"{m['rmse_volt']:.2f} mV")
-                with c2:
-                    st.metric("PICP (UQ)", f"{m['picp']:.1f} %")
-                    if "nis_within" in m:
-                        st.metric("NIS < χ²", f"{m['nis_within']:.1f} %")
-                if name == "dual" and "dual" in results:
-                    st.metric("Final R₀ Estimate", f"{results['dual']['R0_est'][-1] * 1000:.2f} mΩ")
+            st.markdown(f"#### {labels[name]}")
+    
+            num_cols = 5 if (name == "dual" and "dual" in results) else 4
+            cols = st.columns(num_cols)
+    
+            cols[0].metric("SOC RMSE",  f"{m['rmse_soc']:.4f} %")
+            cols[1].metric("Volt RMSE", f"{m['rmse_volt']:.2f} mV")
+            cols[2].metric("PICP (UQ)", f"{m['picp']:.1f} %")
+            cols[3].metric("NIS < χ²",  f"{m['nis_within']:.1f} %" if "nis_within" in m else "N/A")
+    
+            if num_cols == 5:
+                cols[4].metric("Final R₀", f"{results['dual']['R0_est'][-1] * 1000:.2f} mΩ")
     
         st.divider()
+
     
         # ── TABS SYSTEM ──────────────────────────────────────────────────────
         tab1, tab2, tab3, tab4 = st.tabs([
