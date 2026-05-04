@@ -7,4 +7,4 @@ pandas>=2.2
 reportlab
 scipy
 fpdf2
-kaleido
+kaleido==0.1.0.post1
