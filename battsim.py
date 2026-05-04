@@ -659,21 +659,28 @@ def compute_metrics(asset_data, results, ecm, enable_pf=True, enable_dual=True):
 # CYCLE-BY-CYCLE ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def detect_cycles(time, current, threshold=0.1):
-    cycle_starts = [0]
+def detect_cycles(time, current):
+    import numpy as np
+    current = np.asarray(current)
 
-    for i in range(1, len(current)):
-        if current[i - 1] >= -threshold and current[i] < -threshold:
-            if (i - cycle_starts[-1]) > 100:
-                cycle_starts.append(i)
+    discharging = np.where(current < -0.2)[0]
+
+    if len(discharging) == 0:
+        return [(0, len(current) - 1)]
+
+    starts = [0]
+
+    for i in range(1, len(discharging)):
+        if discharging[i] - discharging[i - 1] > 50:
+            starts.append(discharging[i])
 
     cycle_markers = []
-    for i in range(len(cycle_starts) - 1):
-        cycle_markers.append((cycle_starts[i], cycle_starts[i + 1] - 1))
-
-    cycle_markers.append((cycle_starts[-1], len(current) - 1))
+    for i in range(len(starts) - 1):
+        cycle_markers.append((starts[i], starts[i + 1] - 1))
+    cycle_markers.append((starts[-1], len(current) - 1))
 
     return cycle_markers
+
 
 
 
