@@ -888,7 +888,7 @@ UQ Metrics: RMSE_SOC, RMSE_Volt, PICP, MPIW, NIS
         with st.expander("🔧 Options", expanded=True):
            # enable_pf   = st.checkbox("Enable Particle Filter",  value=True)
             #n_particles = st.slider("PF particles", 100, 2000, 500, 50)
-            enable_pf   = false
+            enable_pf   = False
             n_particles  = 500
             enable_dual = st.checkbox("Enable Dual EKF (R₀ tracking)", value=True)
 
