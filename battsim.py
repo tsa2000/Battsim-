@@ -943,9 +943,9 @@ with st.expander("📐 System Architecture", expanded=False):
 
         run_btn = st.button("🚀 Run Digital Twin", use_container_width=True)
         
-        if run_btn:
-            bar = st.progress(0)
-            stat = st.empty()
+     if run_btn:
+         bar = st.progress(0)
+         stat = st.empty()
         
             # 🔋 Machine 1: Physical Asset Simulation
             stat.text("🔋 Machine 1: Simulating Physical Asset (PyBaMM DFN)...")
@@ -1001,8 +1001,6 @@ with st.expander("📐 System Architecture", expanded=False):
                 "fig": fig,
                 "enable_dual": enable_dual
             )
-
-        
                 bar.progress(100)
                 stat.success(f"✅ Done — steady-state metrics exclude first {cutoff} samples (10%)")
         
