@@ -944,7 +944,7 @@ with st.expander("📐 System Architecture", expanded=False):
         run_btn = st.button("🚀 Run Digital Twin", use_container_width=True)
 
     if run_btn:
-        bar = st.progress(100)
+        bar = st.progress(0)
         stat = st.empty()
     
         # 🔋 Machine 1: Physical Asset Simulation
@@ -1001,7 +1001,6 @@ with st.expander("📐 System Architecture", expanded=False):
             "fig": fig,
             "enable_dual": enable_dual
         }
-    
         st.rerun()
 
 
