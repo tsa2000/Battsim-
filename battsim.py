@@ -1,3 +1,11 @@
+import plotly.io as pio
+
+pio.kaleido.scope.chromium_args = (
+    "--headless",
+    "--no-sandbox",
+    "--single-process",
+    "--disable-gpu"
+)
 import streamlit as st
 import numpy as np
 import pandas as pd
