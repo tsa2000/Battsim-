@@ -1159,7 +1159,7 @@ def main():
         initial_sidebar_state="expanded",
     )
 
-    st.title("🔋 NMC622 Digital Twin — Advanced UQ Framework")
+    st.title("🔋 Battsim-NMC622 Digital Twin — Advanced UQ")
     st.caption(
         "Designed by Eng.Thaer Abushawer"
     )
