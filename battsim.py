@@ -1003,222 +1003,222 @@ def main():
 # ══════════════════════════════════════════════════════════════════════════
 # DISPLAY BLOCK (Executive Summary + Independent UQ Plots per Tab)
 # ══════════════════════════════════════════════════════════════════════════
-if 'sim_results' in st.session_state:
-    res = st.session_state['sim_results']
-
-    metrics     = res["metrics"]
-    results     = res["results"]
-    asset_data  = res["asset_data"]
-    enable_dual = res["enable_dual"]
-
-    time     = asset_data["time"]
-    soc_true = asset_data["soc_true"]
-    t_true   = asset_data["temp_true"]
-
-    def rgba(hex_color, alpha=0.15):
-        hex_color = hex_color.lstrip('#')
-        r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
-        return f"rgba({r}, {g}, {b}, {alpha})"
-
-    layout_args = dict(height=350, template="plotly_white", margin=dict(t=40, b=10, l=10, r=10))
-
-    # ── 🏆 EXECUTIVE SUMMARY ─────────────────────────────────────────────
-    st.subheader("🏆 Global Performance Metrics (Steady-State)")
-
-    filter_names = ["aekf", "ukf"]
-    if enable_dual and "dual" in metrics:
-        filter_names.append("dual")
-
-    top_cols = st.columns(len(filter_names))
-    labels   = {"aekf": "🎯 AEKF", "ukf": "🧠 UKF", "dual": "⚡ Dual EKF"}
-
-    for col, name in zip(top_cols, filter_names):
-        m = metrics[name]
-        with col:
-            st.markdown(f"### {labels[name]}")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.metric("SOC RMSE",  f"{m['rmse_soc']:.4f} %")
-                st.metric("Volt RMSE", f"{m['rmse_volt']:.2f} mV")
-            with c2:
-                st.metric("PICP (UQ)", f"{m['picp']:.1f} %")
-                if "nis_within" in m:
-                    st.metric("NIS < χ²", f"{m['nis_within']:.1f} %")
-            if name == "dual" and "dual" in results:
-                st.metric("Final R₀ Estimate", f"{results['dual']['R0_est'][-1] * 1000:.2f} mΩ")
-
-    st.divider()
-
-    # ── TABS SYSTEM ──────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "🎯 AEKF Analysis",
-        "🧠 UKF Analysis",
-        "⚡ Dual EKF Analysis",
-        "📊 Benchmark & Cycles"
-    ])
-
-    # ── TAB 1: AEKF ──────────────────────────────────────────────────────
-    with tab1:
-        r1c1, r1c2 = st.columns(2)
-        r2c1, r2c2 = st.columns(2)
-
-        c_aekf  = "#A23B72"
-        soc_est = results["aekf"]["soc"]
-        sigma   = results["aekf"]["sigma"]
-        innov   = results["aekf"]["innov"]
-        nis     = results["aekf"].get("nis", [])
-
-        with r1c1:
-            fig1 = go.Figure()
-            fig1.add_trace(go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")))
-            fig1.add_trace(go.Scatter(x=time, y=soc_est, name="AEKF SOC", line=dict(color=c_aekf)))
-            fig1.add_trace(go.Scatter(x=time, y=soc_est + 2 * sigma, mode='lines', line=dict(width=0), showlegend=False))
-            fig1.add_trace(go.Scatter(x=time, y=soc_est - 2 * sigma, fill='tonexty', fillcolor=rgba(c_aekf), line=dict(width=0), name="±2σ (95%)"))
-            fig1.update_layout(title="1. SOC Tracking & 95% Confidence Bounds", **layout_args)
-            st.plotly_chart(fig1, use_container_width=True)
-
-        with r1c2:
-            fig2 = go.Figure()
-            error = (soc_est - soc_true) * 100
-            fig2.add_trace(go.Scatter(x=time, y=error, name="Error (%)", line=dict(color=c_aekf)))
-            fig2.add_trace(go.Scatter(x=time, y=2 * sigma * 100, name="+2σ", line=dict(color="gray", dash="dot")))
-            fig2.add_trace(go.Scatter(x=time, y=-2 * sigma * 100, name="-2σ", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
-            fig2.update_layout(title="2. Estimation Error vs. Filter Uncertainty (UQ)", yaxis_title="Error [%]", **layout_args)
-            st.plotly_chart(fig2, use_container_width=True)
-
-        with r2c1:
-            fig3 = go.Figure()
-            fig3.add_trace(go.Scatter(x=time, y=innov, name="Innovation", line=dict(color=c_aekf)))
-            fig3.update_layout(title="3. Voltage Residuals (Innovation Sequence) [mV]", **layout_args)
-            st.plotly_chart(fig3, use_container_width=True)
-
-        with r2c2:
-            fig4 = go.Figure()
-            if len(nis) > 0:
-                w = min(50, max(5, len(time) // 20))
-                smooth_nis = np.convolve(nis, np.ones(w) / w, "same")
-                fig4.add_trace(go.Scatter(x=time, y=smooth_nis, name="Smoothed NIS", line=dict(color=c_aekf)))
-                fig4.add_hline(y=chi2.ppf(0.95, df=2), line_dash="dash", line_color="#D62828", annotation_text="χ² 95% threshold")
-            fig4.update_layout(title="4. Statistical Consistency (NIS Test)", **layout_args)
-            st.plotly_chart(fig4, use_container_width=True)
-
-    # ── TAB 2: UKF ───────────────────────────────────────────────────────
-    with tab2:
-        r1c1, r1c2 = st.columns(2)
-        r2c1, r2c2 = st.columns(2)
-
-        c_ukf     = "#F18F01"
-        soc_est_u = results["ukf"]["soc"]
-        sigma_u   = results["ukf"]["sigma"]
-        temp_u    = results["ukf"]["temp"]
-        nis_u     = results["ukf"].get("nis", [])
-
-        with r1c1:
-            fig5 = go.Figure()
-            fig5.add_trace(go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")))
-            fig5.add_trace(go.Scatter(x=time, y=soc_est_u, name="UKF SOC", line=dict(color=c_ukf)))
-            fig5.add_trace(go.Scatter(x=time, y=soc_est_u + 2 * sigma_u, mode='lines', line=dict(width=0), showlegend=False))
-            fig5.add_trace(go.Scatter(x=time, y=soc_est_u - 2 * sigma_u, fill='tonexty', fillcolor=rgba(c_ukf), line=dict(width=0), name="±2σ (95%)"))
-            fig5.update_layout(title="1. SOC Tracking & 95% Confidence Bounds", **layout_args)
-            st.plotly_chart(fig5, use_container_width=True)
-
-        with r1c2:
-            fig6 = go.Figure()
-            error_u = (soc_est_u - soc_true) * 100
-            fig6.add_trace(go.Scatter(x=time, y=error_u, name="Error (%)", line=dict(color=c_ukf)))
-            fig6.add_trace(go.Scatter(x=time, y=2 * sigma_u * 100, name="+2σ", line=dict(color="gray", dash="dot")))
-            fig6.add_trace(go.Scatter(x=time, y=-2 * sigma_u * 100, name="-2σ", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
-            fig6.update_layout(title="2. Estimation Error vs. Filter Uncertainty (UQ)", yaxis_title="Error [%]", **layout_args)
-            st.plotly_chart(fig6, use_container_width=True)
-
-        with r2c1:
-            fig7 = go.Figure()
-            fig7.add_trace(go.Scatter(x=time, y=t_true, name="DFN Temp", line=dict(color="black", dash="dash")))
-            fig7.add_trace(go.Scatter(x=time, y=temp_u, name="Estimated Temp", line=dict(color=c_ukf)))
-            fig7.update_layout(title="3. Core Temperature Tracking [K]", **layout_args)
-            st.plotly_chart(fig7, use_container_width=True)
-
-        with r2c2:
-            fig8 = go.Figure()
-            fig8.add_trace(go.Scatter(x=time, y=sigma_u * 100, name="Sigma SOC", line=dict(color=c_ukf)))
-            fig8.update_layout(title="4. Uncertainty Envelope Over Time (σ %)", **layout_args)
-            st.plotly_chart(fig8, use_container_width=True)
-
-    # ── TAB 3: Dual EKF ──────────────────────────────────────────────────
-    with tab3:
-        if enable_dual and "dual" in results:
+    if 'sim_results' in st.session_state:
+        res = st.session_state['sim_results']
+    
+        metrics     = res["metrics"]
+        results     = res["results"]
+        asset_data  = res["asset_data"]
+        enable_dual = res["enable_dual"]
+    
+        time     = asset_data["time"]
+        soc_true = asset_data["soc_true"]
+        t_true   = asset_data["temp_true"]
+    
+        def rgba(hex_color, alpha=0.15):
+            hex_color = hex_color.lstrip('#')
+            r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+            return f"rgba({r}, {g}, {b}, {alpha})"
+    
+        layout_args = dict(height=350, template="plotly_white", margin=dict(t=40, b=10, l=10, r=10))
+    
+        # ── 🏆 EXECUTIVE SUMMARY ─────────────────────────────────────────────
+        st.subheader("🏆 Global Performance Metrics (Steady-State)")
+    
+        filter_names = ["aekf", "ukf"]
+        if enable_dual and "dual" in metrics:
+            filter_names.append("dual")
+    
+        top_cols = st.columns(len(filter_names))
+        labels   = {"aekf": "🎯 AEKF", "ukf": "🧠 UKF", "dual": "⚡ Dual EKF"}
+    
+        for col, name in zip(top_cols, filter_names):
+            m = metrics[name]
+            with col:
+                st.markdown(f"### {labels[name]}")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.metric("SOC RMSE",  f"{m['rmse_soc']:.4f} %")
+                    st.metric("Volt RMSE", f"{m['rmse_volt']:.2f} mV")
+                with c2:
+                    st.metric("PICP (UQ)", f"{m['picp']:.1f} %")
+                    if "nis_within" in m:
+                        st.metric("NIS < χ²", f"{m['nis_within']:.1f} %")
+                if name == "dual" and "dual" in results:
+                    st.metric("Final R₀ Estimate", f"{results['dual']['R0_est'][-1] * 1000:.2f} mΩ")
+    
+        st.divider()
+    
+        # ── TABS SYSTEM ──────────────────────────────────────────────────────
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "🎯 AEKF Analysis",
+            "🧠 UKF Analysis",
+            "⚡ Dual EKF Analysis",
+            "📊 Benchmark & Cycles"
+        ])
+    
+        # ── TAB 1: AEKF ──────────────────────────────────────────────────────
+        with tab1:
             r1c1, r1c2 = st.columns(2)
             r2c1, r2c2 = st.columns(2)
-
-            c_dual    = "#2E86AB"
-            soc_est_d = results["dual"]["soc"]
-            sigma_d   = results["dual"]["sigma"]
-            r0_est    = results["dual"]["R0_est"] * 1000
-            sigma_r0  = results["dual"]["sigma_R0"] * 1000
-
+    
+            c_aekf  = "#A23B72"
+            soc_est = results["aekf"]["soc"]
+            sigma   = results["aekf"]["sigma"]
+            innov   = results["aekf"]["innov"]
+            nis     = results["aekf"].get("nis", [])
+    
             with r1c1:
-                fig9 = go.Figure()
-                fig9.add_trace(go.Scatter(x=time, y=r0_est, name="R₀ Estimated", line=dict(color=c_dual)))
-                fig9.add_trace(go.Scatter(x=time, y=r0_est + 2 * sigma_r0, mode='lines', line=dict(width=0), showlegend=False))
-                fig9.add_trace(go.Scatter(x=time, y=r0_est - 2 * sigma_r0, fill='tonexty', fillcolor=rgba(c_dual), line=dict(width=0), name="±2σ (95%)"))
-                fig9.update_layout(title="1. Online R₀ Tracking & Uncertainty [mΩ]", **layout_args)
-                st.plotly_chart(fig9, use_container_width=True)
-
+                fig1 = go.Figure()
+                fig1.add_trace(go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")))
+                fig1.add_trace(go.Scatter(x=time, y=soc_est, name="AEKF SOC", line=dict(color=c_aekf)))
+                fig1.add_trace(go.Scatter(x=time, y=soc_est + 2 * sigma, mode='lines', line=dict(width=0), showlegend=False))
+                fig1.add_trace(go.Scatter(x=time, y=soc_est - 2 * sigma, fill='tonexty', fillcolor=rgba(c_aekf), line=dict(width=0), name="±2σ (95%)"))
+                fig1.update_layout(title="1. SOC Tracking & 95% Confidence Bounds", **layout_args)
+                st.plotly_chart(fig1, use_container_width=True)
+    
             with r1c2:
-                fig10 = go.Figure()
-                error_d = (soc_est_d - soc_true) * 100
-                fig10.add_trace(go.Scatter(x=time, y=error_d, name="Error (%)", line=dict(color=c_dual)))
-                fig10.add_trace(go.Scatter(x=time, y=2 * sigma_d * 100, name="+2σ", line=dict(color="gray", dash="dot")))
-                fig10.add_trace(go.Scatter(x=time, y=-2 * sigma_d * 100, name="-2σ", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
-                fig10.update_layout(title="2. Estimation Error vs. Filter Uncertainty (UQ)", yaxis_title="Error [%]", **layout_args)
-                st.plotly_chart(fig10, use_container_width=True)
-
+                fig2 = go.Figure()
+                error = (soc_est - soc_true) * 100
+                fig2.add_trace(go.Scatter(x=time, y=error, name="Error (%)", line=dict(color=c_aekf)))
+                fig2.add_trace(go.Scatter(x=time, y=2 * sigma * 100, name="+2σ", line=dict(color="gray", dash="dot")))
+                fig2.add_trace(go.Scatter(x=time, y=-2 * sigma * 100, name="-2σ", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
+                fig2.update_layout(title="2. Estimation Error vs. Filter Uncertainty (UQ)", yaxis_title="Error [%]", **layout_args)
+                st.plotly_chart(fig2, use_container_width=True)
+    
             with r2c1:
-                fig11 = go.Figure()
-                fig11.add_trace(go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")))
-                fig11.add_trace(go.Scatter(x=time, y=soc_est_d, name="Dual SOC", line=dict(color=c_dual)))
-                fig11.update_layout(title="3. SOC Tracking Accuracy", **layout_args)
-                st.plotly_chart(fig11, use_container_width=True)
-
+                fig3 = go.Figure()
+                fig3.add_trace(go.Scatter(x=time, y=innov, name="Innovation", line=dict(color=c_aekf)))
+                fig3.update_layout(title="3. Voltage Residuals (Innovation Sequence) [mV]", **layout_args)
+                st.plotly_chart(fig3, use_container_width=True)
+    
             with r2c2:
-                fig12 = go.Figure()
-                fig12.add_trace(go.Scatter(x=time, y=results["dual"]["temp"], name="Dual Temp", line=dict(color=c_dual)))
-                fig12.add_trace(go.Scatter(x=time, y=t_true, name="DFN Truth", line=dict(color="black", dash="dash")))
-                fig12.update_layout(title="4. Core Temperature Tracking [K]", **layout_args)
-                st.plotly_chart(fig12, use_container_width=True)
-        else:
-            st.warning("Dual EKF is disabled. Enable it from the sidebar to view this analysis.")
-
-    # ── TAB 4: Benchmark & Cycles ─────────────────────────────────────────
-    with tab4:
-        c1, c2 = st.columns(2)
-        with c1:
-            fig_comp_error = go.Figure()
-            fig_comp_error.add_trace(go.Scatter(x=time, y=abs(soc_est - soc_true) * 100, name="AEKF Error", line=dict(color=c_aekf)))
-            fig_comp_error.add_trace(go.Scatter(x=time, y=abs(soc_est_u - soc_true) * 100, name="UKF Error", line=dict(color=c_ukf)))
+                fig4 = go.Figure()
+                if len(nis) > 0:
+                    w = min(50, max(5, len(time) // 20))
+                    smooth_nis = np.convolve(nis, np.ones(w) / w, "same")
+                    fig4.add_trace(go.Scatter(x=time, y=smooth_nis, name="Smoothed NIS", line=dict(color=c_aekf)))
+                    fig4.add_hline(y=chi2.ppf(0.95, df=2), line_dash="dash", line_color="#D62828", annotation_text="χ² 95% threshold")
+                fig4.update_layout(title="4. Statistical Consistency (NIS Test)", **layout_args)
+                st.plotly_chart(fig4, use_container_width=True)
+    
+        # ── TAB 2: UKF ───────────────────────────────────────────────────────
+        with tab2:
+            r1c1, r1c2 = st.columns(2)
+            r2c1, r2c2 = st.columns(2)
+    
+            c_ukf     = "#F18F01"
+            soc_est_u = results["ukf"]["soc"]
+            sigma_u   = results["ukf"]["sigma"]
+            temp_u    = results["ukf"]["temp"]
+            nis_u     = results["ukf"].get("nis", [])
+    
+            with r1c1:
+                fig5 = go.Figure()
+                fig5.add_trace(go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")))
+                fig5.add_trace(go.Scatter(x=time, y=soc_est_u, name="UKF SOC", line=dict(color=c_ukf)))
+                fig5.add_trace(go.Scatter(x=time, y=soc_est_u + 2 * sigma_u, mode='lines', line=dict(width=0), showlegend=False))
+                fig5.add_trace(go.Scatter(x=time, y=soc_est_u - 2 * sigma_u, fill='tonexty', fillcolor=rgba(c_ukf), line=dict(width=0), name="±2σ (95%)"))
+                fig5.update_layout(title="1. SOC Tracking & 95% Confidence Bounds", **layout_args)
+                st.plotly_chart(fig5, use_container_width=True)
+    
+            with r1c2:
+                fig6 = go.Figure()
+                error_u = (soc_est_u - soc_true) * 100
+                fig6.add_trace(go.Scatter(x=time, y=error_u, name="Error (%)", line=dict(color=c_ukf)))
+                fig6.add_trace(go.Scatter(x=time, y=2 * sigma_u * 100, name="+2σ", line=dict(color="gray", dash="dot")))
+                fig6.add_trace(go.Scatter(x=time, y=-2 * sigma_u * 100, name="-2σ", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
+                fig6.update_layout(title="2. Estimation Error vs. Filter Uncertainty (UQ)", yaxis_title="Error [%]", **layout_args)
+                st.plotly_chart(fig6, use_container_width=True)
+    
+            with r2c1:
+                fig7 = go.Figure()
+                fig7.add_trace(go.Scatter(x=time, y=t_true, name="DFN Temp", line=dict(color="black", dash="dash")))
+                fig7.add_trace(go.Scatter(x=time, y=temp_u, name="Estimated Temp", line=dict(color=c_ukf)))
+                fig7.update_layout(title="3. Core Temperature Tracking [K]", **layout_args)
+                st.plotly_chart(fig7, use_container_width=True)
+    
+            with r2c2:
+                fig8 = go.Figure()
+                fig8.add_trace(go.Scatter(x=time, y=sigma_u * 100, name="Sigma SOC", line=dict(color=c_ukf)))
+                fig8.update_layout(title="4. Uncertainty Envelope Over Time (σ %)", **layout_args)
+                st.plotly_chart(fig8, use_container_width=True)
+    
+        # ── TAB 3: Dual EKF ──────────────────────────────────────────────────
+        with tab3:
             if enable_dual and "dual" in results:
-                fig_comp_error.add_trace(go.Scatter(x=time, y=abs(soc_est_d - soc_true) * 100, name="Dual Error", line=dict(color=c_dual)))
-            fig_comp_error.update_layout(title="Absolute Estimation Error Comparison [%]", **layout_args)
-            st.plotly_chart(fig_comp_error, use_container_width=True)
-
-        with c2:
-            fig_comp_uncert = go.Figure()
-            fig_comp_uncert.add_trace(go.Scatter(x=time, y=sigma * 100, name="AEKF σ", line=dict(color=c_aekf)))
-            fig_comp_uncert.add_trace(go.Scatter(x=time, y=sigma_u * 100, name="UKF σ", line=dict(color=c_ukf)))
-            if enable_dual and "dual" in results:
-                fig_comp_uncert.add_trace(go.Scatter(x=time, y=sigma_d * 100, name="Dual σ", line=dict(color=c_dual)))
-            fig_comp_uncert.update_layout(title="Uncertainty (σ) Envelope Comparison [%]", **layout_args)
-            st.plotly_chart(fig_comp_uncert, use_container_width=True)
-
-        st.divider()
-
-        st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
-        st.dataframe(res["cycle_df"], use_container_width=True)
-
-        st.info(
-            "**Notes:** Voltage RMSE = ‖V_DFN − V_ECM_reconstructed‖. "
-            "Dual EKF tracks R₀ via random-walk prior."
-        )
+                r1c1, r1c2 = st.columns(2)
+                r2c1, r2c2 = st.columns(2)
+    
+                c_dual    = "#2E86AB"
+                soc_est_d = results["dual"]["soc"]
+                sigma_d   = results["dual"]["sigma"]
+                r0_est    = results["dual"]["R0_est"] * 1000
+                sigma_r0  = results["dual"]["sigma_R0"] * 1000
+    
+                with r1c1:
+                    fig9 = go.Figure()
+                    fig9.add_trace(go.Scatter(x=time, y=r0_est, name="R₀ Estimated", line=dict(color=c_dual)))
+                    fig9.add_trace(go.Scatter(x=time, y=r0_est + 2 * sigma_r0, mode='lines', line=dict(width=0), showlegend=False))
+                    fig9.add_trace(go.Scatter(x=time, y=r0_est - 2 * sigma_r0, fill='tonexty', fillcolor=rgba(c_dual), line=dict(width=0), name="±2σ (95%)"))
+                    fig9.update_layout(title="1. Online R₀ Tracking & Uncertainty [mΩ]", **layout_args)
+                    st.plotly_chart(fig9, use_container_width=True)
+    
+                with r1c2:
+                    fig10 = go.Figure()
+                    error_d = (soc_est_d - soc_true) * 100
+                    fig10.add_trace(go.Scatter(x=time, y=error_d, name="Error (%)", line=dict(color=c_dual)))
+                    fig10.add_trace(go.Scatter(x=time, y=2 * sigma_d * 100, name="+2σ", line=dict(color="gray", dash="dot")))
+                    fig10.add_trace(go.Scatter(x=time, y=-2 * sigma_d * 100, name="-2σ", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
+                    fig10.update_layout(title="2. Estimation Error vs. Filter Uncertainty (UQ)", yaxis_title="Error [%]", **layout_args)
+                    st.plotly_chart(fig10, use_container_width=True)
+    
+                with r2c1:
+                    fig11 = go.Figure()
+                    fig11.add_trace(go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")))
+                    fig11.add_trace(go.Scatter(x=time, y=soc_est_d, name="Dual SOC", line=dict(color=c_dual)))
+                    fig11.update_layout(title="3. SOC Tracking Accuracy", **layout_args)
+                    st.plotly_chart(fig11, use_container_width=True)
+    
+                with r2c2:
+                    fig12 = go.Figure()
+                    fig12.add_trace(go.Scatter(x=time, y=results["dual"]["temp"], name="Dual Temp", line=dict(color=c_dual)))
+                    fig12.add_trace(go.Scatter(x=time, y=t_true, name="DFN Truth", line=dict(color="black", dash="dash")))
+                    fig12.update_layout(title="4. Core Temperature Tracking [K]", **layout_args)
+                    st.plotly_chart(fig12, use_container_width=True)
+            else:
+                st.warning("Dual EKF is disabled. Enable it from the sidebar to view this analysis.")
+    
+        # ── TAB 4: Benchmark & Cycles ─────────────────────────────────────────
+        with tab4:
+            c1, c2 = st.columns(2)
+            with c1:
+                fig_comp_error = go.Figure()
+                fig_comp_error.add_trace(go.Scatter(x=time, y=abs(soc_est - soc_true) * 100, name="AEKF Error", line=dict(color=c_aekf)))
+                fig_comp_error.add_trace(go.Scatter(x=time, y=abs(soc_est_u - soc_true) * 100, name="UKF Error", line=dict(color=c_ukf)))
+                if enable_dual and "dual" in results:
+                    fig_comp_error.add_trace(go.Scatter(x=time, y=abs(soc_est_d - soc_true) * 100, name="Dual Error", line=dict(color=c_dual)))
+                fig_comp_error.update_layout(title="Absolute Estimation Error Comparison [%]", **layout_args)
+                st.plotly_chart(fig_comp_error, use_container_width=True)
+    
+            with c2:
+                fig_comp_uncert = go.Figure()
+                fig_comp_uncert.add_trace(go.Scatter(x=time, y=sigma * 100, name="AEKF σ", line=dict(color=c_aekf)))
+                fig_comp_uncert.add_trace(go.Scatter(x=time, y=sigma_u * 100, name="UKF σ", line=dict(color=c_ukf)))
+                if enable_dual and "dual" in results:
+                    fig_comp_uncert.add_trace(go.Scatter(x=time, y=sigma_d * 100, name="Dual σ", line=dict(color=c_dual)))
+                fig_comp_uncert.update_layout(title="Uncertainty (σ) Envelope Comparison [%]", **layout_args)
+                st.plotly_chart(fig_comp_uncert, use_container_width=True)
+    
+            st.divider()
+    
+            st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
+            st.dataframe(res["cycle_df"], use_container_width=True)
+    
+            st.info(
+                "**Notes:** Voltage RMSE = ‖V_DFN − V_ECM_reconstructed‖. "
+                "Dual EKF tracks R₀ via random-walk prior."
+            )
 
 
         
