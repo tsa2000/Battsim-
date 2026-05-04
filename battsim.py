@@ -659,27 +659,37 @@ def compute_metrics(asset_data, results, ecm, enable_pf=True, enable_dual=True):
 # CYCLE-BY-CYCLE ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def detect_cycles(time, current):
-    import numpy as np
-    current = np.asarray(current)
+def analyze_cycles(asset_data, results, ecm, enable_dual=True):
+    time = asset_data["time"]
+    current = asset_data["current_true"]
+    soc_true = asset_data["soc_true"]
 
-    discharging = np.where(current < -0.2)[0]
+    cycles = detect_cycles(time, current)
+    cycle_data = []
 
-    if len(discharging) == 0:
-        return [(0, len(current) - 1)]
+    for cycle_idx, (start, end) in enumerate(cycles):
+        cycle_info = {"Cycle": cycle_idx + 1}
 
-    starts = [0]
+        for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
+            r = results[name]
 
-    for i in range(1, len(discharging)):
-        if discharging[i] - discharging[i - 1] > 50:
-            starts.append(discharging[i])
+            s_seg = r["soc"][start:end + 1]
+            t_seg = soc_true[start:end + 1]
+            rmse = np.sqrt(np.mean((s_seg - t_seg) ** 2)) * 100
+            cycle_info[f"{name.upper()} RMSE (%)"] = round(rmse, 4)
 
-    cycle_markers = []
-    for i in range(len(starts) - 1):
-        cycle_markers.append((starts[i], starts[i + 1] - 1))
-    cycle_markers.append((starts[-1], len(current) - 1))
+            sigma_seg = r["sigma"][start:end + 1]
+            mpiw = np.mean(4 * sigma_seg) * 100
+            cycle_info[f"{name.upper()} MPIW (%)"] = round(mpiw, 4)
 
-    return cycle_markers
+            if "nis" in r and len(r["nis"]) > end:
+                nis_seg = r["nis"][start:end + 1]
+                nis_within, _ = UQMetrics.nis_consistency(nis_seg)
+                cycle_info[f"{name.upper()} NIS (%)"] = round(nis_within, 1)
+
+        cycle_data.append(cycle_info)
+
+    return pd.DataFrame(cycle_data)
 
 
 
