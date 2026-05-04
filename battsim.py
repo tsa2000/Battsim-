@@ -872,7 +872,7 @@ def main():
         "Comprehensive thermal model with entropic heating"
     )
 
-    with st.expander("📐 System Architecture", expanded=False):
+ with st.expander("📐 System Architecture", expanded=False):
     col1, col2 = st.columns(2)
 
         with col1:
