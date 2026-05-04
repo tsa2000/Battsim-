@@ -1,5 +1,4 @@
-libopenblas-dev
-liblapack-dev
+
 gfortran
 libnss3
 libnspr4
