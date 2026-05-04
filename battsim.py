@@ -943,66 +943,67 @@ with st.expander("📐 System Architecture", expanded=False):
 
         run_btn = st.button("🚀 Run Digital Twin", use_container_width=True)
 
-        if run_btn:
-            bar = st.progress(0)
-            stat = st.empty()
-        
-            # 🔋 Machine 1: Physical Asset Simulation
-            stat.text("🔋 Machine 1: Simulating Physical Asset (PyBaMM DFN)...")
-            bar.progress(10)
-            asset_data = PhysicalAsset(BatteryConfig()).simulate(
-                cycles, c_rate, noise_v, noise_t, noise_i
-            )
-        
-            ecm_params = dict(
-                R0=R0, R1=R1, C1=C1, R2=R2, C2=C2,
-                R_th=R_th, C_th=C_th, T_amb=T_amb,
-            )
-            filter_params = dict(
-                P0=P0_vals, Q=Q_vals, R=R_vals, n_particles=n_particles, Q_w=[q_w_val]
-            )
-        
-            # 🧠 Machine 2: Digital Twin & Filtering
-            stat.text("🧠 Machine 2: Running Digital Twin Estimation Filters...")
-            bar.progress(40)
-            results, ecm_ref, dual_ekf = run_digital_twin_system(
-                asset_data, ecm_params, filter_params,
-                enable_pf=enable_pf, enable_dual=enable_dual,
-            )
-        
-            # 📊 Machine 2: Metrics & Cycle Analysis
-            stat.text("📊 Machine 2: Computing Metrics & Cycle-by-Cycle Analysis...")
-            bar.progress(75)
-            metrics, cutoff = compute_metrics(
-                asset_data, results, ecm_ref,
-                enable_pf=enable_pf, enable_dual=enable_dual,
-            )
-        
-            cycle_df = analyze_cycles(asset_data, results, ecm_ref, enable_dual=enable_dual)
-        
-            # 🎨 Machine 2: Visualization Rendering
-            stat.text("🎨 Machine 2: Rendering Digital Twin Visualizations...")
-            bar.progress(92)
-            fig = create_comprehensive_plots(
-                asset_data["time"], asset_data, results,
-                enable_pf=enable_pf, enable_dual=enable_dual,
-            )
-        
-            bar.progress(100)
-            stat.success("✅ Machine 1 & 2 Synchronization Complete!")
-        
-            st.session_state['sim_results'] = {
-                "asset_data": asset_data,
-                "results": results,
-                "metrics": metrics,
-                "cycle_df": cycle_df,
-                "ecm_params": ecm_params,
-                "filter_params": filter_params,
-                "fig": fig,
-                "enable_dual": enable_dual
-            }
-        
-            st.rerun()
+    if run_btn:
+        bar = st.progress(100)
+        stat = st.empty()
+    
+        # 🔋 Machine 1: Physical Asset Simulation
+        stat.text("🔋 Machine 1: Simulating Physical Asset (PyBaMM DFN)...")
+        bar.progress(10)
+        asset_data = PhysicalAsset(BatteryConfig()).simulate(
+            cycles, c_rate, noise_v, noise_t, noise_i
+        )
+    
+        ecm_params = dict(
+            R0=R0, R1=R1, C1=C1, R2=R2, C2=C2,
+            R_th=R_th, C_th=C_th, T_amb=T_amb,
+        )
+        filter_params = dict(
+            P0=P0_vals, Q=Q_vals, R=R_vals, n_particles=n_particles, Q_w=[q_w_val]
+        )
+    
+        # 🧠 Machine 2: Digital Twin & Filtering
+        stat.text("🧠 Machine 2: Running Digital Twin Estimation Filters...")
+        bar.progress(40)
+        results, ecm_ref, dual_ekf = run_digital_twin_system(
+            asset_data, ecm_params, filter_params,
+            enable_pf=enable_pf, enable_dual=enable_dual,
+        )
+    
+        # 📊 Machine 2: Metrics & Cycle Analysis
+        stat.text("📊 Machine 2: Computing Metrics & Cycle-by-Cycle Analysis...")
+        bar.progress(75)
+        metrics, cutoff = compute_metrics(
+            asset_data, results, ecm_ref,
+            enable_pf=enable_pf, enable_dual=enable_dual,
+        )
+    
+        cycle_df = analyze_cycles(asset_data, results, ecm_ref, enable_dual=enable_dual)
+    
+        # 🎨 Machine 2: Visualization Rendering
+        stat.text("🎨 Machine 2: Rendering Digital Twin Visualizations...")
+        bar.progress(92)
+        fig = create_comprehensive_plots(
+            asset_data["time"], asset_data, results,
+            enable_pf=enable_pf, enable_dual=enable_dual,
+        )
+    
+        bar.progress(100)
+        stat.success("✅ Machine 1 & 2 Synchronization Complete!")
+    
+        st.session_state['sim_results'] = {
+            "asset_data": asset_data,
+            "results": results,
+            "metrics": metrics,
+            "cycle_df": cycle_df,
+            "ecm_params": ecm_params,
+            "filter_params": filter_params,
+            "fig": fig,
+            "enable_dual": enable_dual
+        }
+    
+        st.rerun()
+
 
 
         bar.progress(100)
