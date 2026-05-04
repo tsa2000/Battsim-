@@ -529,13 +529,13 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params,
                             n_particles=filter_params.get("n_particles", 500))
 
     if enable_dual:
-        w0   = [ecm_params["R0"]]
-        P_w0 = [1e-4]
-        Q_w  = [1e-8]
-        R_w  = R         # same voltage noise variance
-        dual_ekf = DualEKF(
-            _make_ecm(), x0, P0, w0, P_w0, Q, R, Q_w, R_w
-        )
+    w0   = [ecm_params["R0"]]
+    P_w0 = [1e-4]
+    Q_w  = filter_params.get("Q_w", [1e-12])
+    R_w  = R
+    dual_ekf = DualEKF(
+        _make_ecm(), x0, P0, w0, P_w0, Q, R, Q_w, R_w
+    )
 
     def _empty():
         return {"soc": [], "v1": [], "v2": [], "sigma": [],
@@ -846,6 +846,7 @@ UQ Metrics: RMSE_SOC, RMSE_Volt, PICP, MPIW, NIS
                 st.number_input("R Voltage", 1e-10, 1e-1, noise_v**2, format="%.2e"),
                 st.number_input("R Temp",    1e-10, 10.0, noise_t**2, format="%.2e"),
             ]
+            q_w_val = st.number_input("Q_w (R₀ Process Noise)", 1e-15, 1e-6, 1e-12, format="%.2e")
 
         with st.expander("🔧 Options", expanded=True):
             enable_pf   = st.checkbox("Enable Particle Filter",  value=True)
@@ -869,7 +870,7 @@ UQ Metrics: RMSE_SOC, RMSE_Volt, PICP, MPIW, NIS
             R_th=R_th, C_th=C_th, T_amb=T_amb,
         )
         filter_params = dict(
-            P0=P0_vals, Q=Q_vals, R=R_vals, n_particles=n_particles
+            P0=P0_vals, Q=Q_vals, R=R_vals, n_particles=n_particles, Q_w=[q_w_val]
         )
 
         stat.text("🧠 Running filters…")
