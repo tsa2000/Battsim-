@@ -659,6 +659,30 @@ def compute_metrics(asset_data, results, ecm, enable_pf=True, enable_dual=True):
 # CYCLE-BY-CYCLE ANALYSIS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def detect_cycles(time, current):
+    import numpy as np
+    current = np.asarray(current)
+
+    discharging = np.where(current < -0.2)[0]
+
+    if len(discharging) == 0:
+        return [(0, len(current) - 1)]
+
+    starts = [0]
+
+    for i in range(1, len(discharging)):
+        if discharging[i] - discharging[i - 1] > 50:
+            starts.append(discharging[i])
+
+    cycle_markers = []
+    for i in range(len(starts) - 1):
+        cycle_markers.append((starts[i], starts[i + 1] - 1))
+    cycle_markers.append((starts[-1], len(current) - 1))
+
+    return cycle_markers
+
+
+
 def analyze_cycles(asset_data, results, ecm, enable_dual=True):
     time = asset_data["time"]
     current = asset_data["current_true"]
@@ -691,28 +715,6 @@ def analyze_cycles(asset_data, results, ecm, enable_dual=True):
 
     return pd.DataFrame(cycle_data)
 
-
-
-
-def analyze_cycles(asset_data, results, ecm, enable_dual=True):
-    time = asset_data["time"]
-    current = asset_data["current_true"]
-    soc_true = asset_data["soc_true"]
-    voltage_true = asset_data["voltage_true"]
-    I_meas = asset_data["current_meas"]
-
-    cycles = detect_cycles(time, current)
-    cycle_data = []
-    for cycle_idx, (start, end) in enumerate(cycles):
-        cycle_info = {"Cycle": cycle_idx + 1}
-        for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
-            r = results[name]
-            s_seg = r["soc"][start:end + 1]
-            t_seg = soc_true[start:end + 1]
-            rmse = np.sqrt(np.mean((s_seg - t_seg) ** 2)) * 100
-            cycle_info[f"{name.upper()} RMSE (%)"] = round(rmse, 4)
-        cycle_data.append(cycle_info)
-    return pd.DataFrame(cycle_data)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
