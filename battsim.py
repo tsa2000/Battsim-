@@ -875,24 +875,24 @@ def main():
     with st.expander("📐 System Architecture", expanded=False):
     col1, col2 = st.columns(2)
 
-    with col1:
-        st.info('''
-        ### 🔋 Machine 1: Physical Asset
-        * **Base Model:** PyBaMM DFN (Chen2020)
-        * **Cell Chemistry:** NMC622 / Graphite
-        * **Thermodynamics:** Lumped Thermal Model
-        * **Heat Sources:** Ohmic + Polarization + Entropic
-        * **Sensors:** V/I/T measurement noise added
-        ''')
-
-    with col2:
-        st.success('''
-        ### 🧠 Machine 2: Digital Twin
-        * **Equivalent Circuit Model:** 2-RC ECM
-        * **Estimation Filters:** AEKF | UKF | Dual EKF
-        * **Adaptive Features:** Online R₀ parameter estimation
-        * **UQ Metrics:** RMSE, MAE, PICP, MPIW, NIS
-        ''')
+        with col1:
+            st.info('''
+            ### 🔋 Machine 1: Physical Asset
+            * **Base Model:** PyBaMM DFN (Chen2020)
+            * **Cell Chemistry:** NMC622 / Graphite
+            * **Thermodynamics:** Lumped Thermal Model
+            * **Heat Sources:** Ohmic + Polarization + Entropic
+            * **Sensors:** V/I/T measurement noise added
+            ''')
+    
+        with col2:
+            st.success('''
+            ### 🧠 Machine 2: Digital Twin
+            * **Equivalent Circuit Model:** 2-RC ECM
+            * **Estimation Filters:** AEKF | UKF | Dual EKF
+            * **Adaptive Features:** Online R₀ parameter estimation
+            * **UQ Metrics:** RMSE, MAE, PICP, MPIW, NIS
+            ''')
 
 
     with st.sidebar:
