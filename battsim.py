@@ -991,12 +991,12 @@ def main():
             bar.progress(100)
             stat.success("✅ Machine 1 & 2 Synchronization Complete!")
             
+            st.subheader("📈 Performance Metrics (Steady-State)")
+            
             st.plotly_chart(fig, use_container_width=True)
             
             st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
             st.dataframe(cycle_df, use_container_width=True)
-
-            st.subheader("📈 Performance Metrics (Steady-State)")
     
             filter_names = ["aekf", "ukf"]
             if enable_pf   and "pf"   in metrics: filter_names.append("pf")
