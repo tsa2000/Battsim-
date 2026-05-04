@@ -942,640 +942,640 @@ class ProfessionalDigitalTwinPDF(FPDF):
         self.ln(3)
 
 
-def generate_comprehensive_pdf_report(res):
-    """
-    Generate a complete professional PDF report with all plots, settings, and results.
-    """
-    pdf = ProfessionalDigitalTwinPDF()
-    
-    # Extract data
-    metrics = res["metrics"]
-    results = res["results"]
-    asset_data = res["asset_data"]
-    settings = res.get("settings", {})
-    cycle_df = res["cycle_df"]
-    enable_dual = res["enable_dual"]
-    
-    time = asset_data["time"]
-    soc_true = asset_data["soc_true"]
-    voltage_true = asset_data["voltage_true"]
-    temp_true = asset_data["temp_true"]
-    current_meas = asset_data["current_meas"]
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # PAGE 1: COVER & EXECUTIVE SUMMARY
-    # ═══════════════════════════════════════════════════════════════════
-    pdf.add_page()
-    
-    pdf.section_title("Executive Summary", "")
-    
-    # Performance metrics table
-    pdf.subsection_title("Global Performance Metrics (Steady-State)")
-    
-    filter_names = ["AEKF", "UKF"]
-    if enable_dual:
-        filter_names.append("Dual EKF")
-    
-    metric_data = {
-        "Filter": filter_names,
-        "SOC RMSE (%)": [],
-        "Voltage RMSE (mV)": [],
-        "PICP (%)": []
-    }
-    
-    for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
-        m = metrics[name]
-        metric_data["SOC RMSE (%)"].append(f"{m['rmse_soc']:.4f}")
-        metric_data["Voltage RMSE (mV)"].append(f"{m['rmse_volt']:.2f}")
-        metric_data["PICP (%)"].append(f"{m['picp']:.1f}")
-    
-    pdf.metric_table(metric_data, col_widths=[50, 45, 50, 45])
-    
-    # Additional metrics
-    pdf.subsection_title("Advanced Uncertainty Quantification Metrics")
-    
-    for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
-        m = metrics[name]
-        pdf.info_box(
-            f"{name.upper()} Detailed Metrics",
-            {
-                "SOC MAE": f"{m['mae_soc']:.4f} %",
-                "Innovation RMS": f"{m['innov_rms']:.4f} mV",
-                "MPIW (Mean Width)": f"{m['mpiw']:.4f} %",
-                "NIS Consistency": f"{m.get('nis_within', 0):.1f} %" if 'nis_within' in m else "N/A"
-            },
-            bg_color=(245, 250, 255)
-        )
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # PAGE 2: SYSTEM CONFIGURATION
-    # ═══════════════════════════════════════════════════════════════════
-    pdf.add_page()
-    pdf.section_title("System Configuration", "")
-    
-    # Physical Asset Settings
-    pdf.subsection_title("Physical Asset Parameters (PyBaMM DFN)")
-    pdf.info_box(
-        "Operating Conditions",
-        {
-            "Total Cycles": settings.get("Cycles", "N/A"),
-            "Discharge C-rate": settings.get("Discharge C-rate", "N/A"),
-            "Cell Chemistry": "NMC622/Graphite",
-            "Thermal Model": "Lumped (Ohmic + Polarization + Entropic)"
-        },
-        bg_color=(255, 250, 240)
-    )
-    
-    # Sensor Noise Configuration
-    pdf.info_box(
-        "Sensor Noise Levels",
-        {
-            "Voltage Noise sigma [V]": f"{settings.get('Voltage Noise sigma [V]', 0):.4f}",
-            "Temperature Noise sigma [K]": f"{settings.get('Temp Noise sigma [K]', 0):.3f}",
-            "Current Noise sigma [A]": f"{settings.get('Current Noise sigma [A]', 0):.4f}"
-        },
-        bg_color=(255, 250, 240)
-    )
-    
-    # ECM Parameters
-    pdf.subsection_title("Equivalent Circuit Model (2-RC) Parameters")
-    pdf.info_box(
-        "Electrical Parameters",
-        {
-            "R0 [Ohm]": f"{settings.get('R0 [Ohm]', 0):.4f}",
-            "R1 [Ohm]": f"{settings.get('R1 [Ohm]', 0):.4f}",
-            "C1 [F]": f"{settings.get('C1 [F]', 0):.1f}",
-            "R2 [Ohm]": f"{settings.get('R2 [Ohm]', 0):.4f}",
-            "C2 [F]": f"{settings.get('C2 [F]', 0):.1f}"
-        },
-        bg_color=(240, 255, 240)
-    )
-    
-    pdf.info_box(
-        "Thermal Parameters",
-        {
-            "R_thermal [K/W]": f"{settings.get('R_th [K/W]', 0):.2f}",
-            "C_thermal [J/K]": f"{settings.get('C_th [J/K]', 0):.1f}",
-            "T_ambient [K]": f"{settings.get('T_ambient [K]', 0):.2f}"
-        },
-        bg_color=(240, 255, 240)
-    )
-    
-    # Filter Tuning
-    pdf.subsection_title("Kalman Filter Tuning Parameters")
-    
-    P0_vals = settings.get("P0_diag", [0, 0, 0, 0])
-    Q_vals = settings.get("Q_diag", [0, 0, 0, 0])
-    R_vals = settings.get("R_diag", [0, 0])
-    
-    pdf.info_box(
-        "Initial Covariance P0",
-        {
-            "P0_SOC": f"{P0_vals[0]:.6e}",
-            "P0_V1": f"{P0_vals[1]:.6e}",
-            "P0_V2": f"{P0_vals[2]:.6e}",
-            "P0_T": f"{P0_vals[3]:.6e}"
-        },
-        bg_color=(255, 245, 245)
-    )
-    
-    pdf.info_box(
-        "Process Noise Q",
-        {
-            "Q_SOC": f"{Q_vals[0]:.6e}",
-            "Q_V1": f"{Q_vals[1]:.6e}",
-            "Q_V2": f"{Q_vals[2]:.6e}",
-            "Q_T": f"{Q_vals[3]:.6e}"
-        },
-        bg_color=(255, 245, 245)
-    )
-    
-    pdf.info_box(
-        "Measurement Noise R",
-        {
-            "R_Voltage": f"{R_vals[0]:.6e}",
-            "R_Temperature": f"{R_vals[1]:.6e}",
-            "Q_w (Dual EKF)": f"{settings.get('Q_w_dual', 0):.6e}" if enable_dual else "N/A"
-        },
-        bg_color=(255, 245, 245)
-    )
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # PAGES 3+: COMPREHENSIVE PLOTS
-    # ═══════════════════════════════════════════════════════════════════
-    
-    def safe_add_plot(fig, title, width=1000, height=600):
-        """Safely add a plot to PDF with error handling"""
-        if pdf.get_y() > 200:
-            pdf.add_page()
+    def generate_comprehensive_pdf_report(res):
+        """
+        Generate a complete professional PDF report with all plots, settings, and results.
+        """
+        pdf = ProfessionalDigitalTwinPDF()
         
-        pdf.subsection_title(title)
+        # Extract data
+        metrics = res["metrics"]
+        results = res["results"]
+        asset_data = res["asset_data"]
+        settings = res.get("settings", {})
+        cycle_df = res["cycle_df"]
+        enable_dual = res["enable_dual"]
         
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-                pio.write_image(fig, tmp.name, format="png", width=width, height=height, scale=2)
-                
-                available_height = 297 - pdf.get_y() - 20  # A4 height - current y - margin
-                img_height = min(110, available_height)
-                
-                pdf.image(tmp.name, x=15, y=pdf.get_y(), w=180, h=img_height)
-                pdf.ln(img_height + 5)
-                os.remove(tmp.name)
-        except Exception as e:
-            pdf.set_font("helvetica", "I", 9)
-            pdf.set_text_color(200, 0, 0)
-            pdf.cell(0, 6, f"Error generating plot: {str(e)}", ln=True)
-            pdf.set_text_color(40, 40, 40)
-    
-    # Plot 1: SOC Comparison (All Filters)
-    pdf.add_page()
-    pdf.section_title("SOC Estimation Analysis", "")
-    
-    fig_soc = go.Figure()
-    fig_soc.add_trace(go.Scatter(x=time, y=soc_true, name="DFN Truth", 
-                                 line=dict(color="#2E86AB", width=3)))
-    
-    colors_map = {"aekf": "#A23B72", "ukf": "#F18F01", "dual": "#06A77D"}
-    for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
-        r = results[name]
-        fig_soc.add_trace(go.Scatter(x=time, y=r["soc"], name=name.upper(),
-                                     line=dict(color=colors_map[name], width=2)))
-    
-    fig_soc.update_layout(
-        title="SOC Tracking: All Filters vs DFN Truth",
-        xaxis_title="Time [s]",
-        yaxis_title="SOC [-]",
-        template="plotly_white",
-        height=500
-    )
-    safe_add_plot(fig_soc, "1. State-of-Charge Tracking Performance")
-    
-    # Plot 2: AEKF Detailed Analysis
-    pdf.add_page()
-    pdf.section_title("AEKF Detailed Analysis", "")
-    
-    r_aekf = results["aekf"]
-    
-    fig_aekf = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=(
-            "SOC Estimation with 95% CI",
-            "Estimation Error vs Uncertainty",
-            "Voltage Innovation Sequence",
-            "Temperature Tracking"
-        )
-    )
-    
-    # Subplot 1: SOC with CI
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")),
-        row=1, col=1
-    )
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=r_aekf["soc"], name="AEKF", line=dict(color="#A23B72")),
-        row=1, col=1
-    )
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=r_aekf["soc"] + 2*r_aekf["sigma"], 
-                   line=dict(width=0), showlegend=False),
-        row=1, col=1
-    )
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=r_aekf["soc"] - 2*r_aekf["sigma"], 
-                   fill='tonexty', fillcolor="rgba(162,59,114,0.2)",
-                   line=dict(width=0), name="95% CI"),
-        row=1, col=1
-    )
-    
-    # Subplot 2: Error vs Uncertainty
-    error_aekf = (r_aekf["soc"] - soc_true) * 100
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=error_aekf, name="Error", line=dict(color="#A23B72")),
-        row=1, col=2
-    )
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=2*r_aekf["sigma"]*100, name="+2sigma", 
-                   line=dict(color="gray", dash="dot")),
-        row=1, col=2
-    )
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=-2*r_aekf["sigma"]*100, name="-2sigma",
-                   fill='tonexty', fillcolor="rgba(128,128,128,0.15)",
-                   line=dict(color="gray", dash="dot")),
-        row=1, col=2
-    )
-    
-    # Subplot 3: Innovation
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=r_aekf["innov"], name="Innovation",
-                   line=dict(color="#A23B72")),
-        row=2, col=1
-    )
-    
-    # Subplot 4: Temperature
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=temp_true, name="DFN Truth",
-                   line=dict(color="black", dash="dash")),
-        row=2, col=2
-    )
-    fig_aekf.add_trace(
-        go.Scatter(x=time, y=r_aekf["temp"], name="AEKF Estimate",
-                   line=dict(color="#A23B72")),
-        row=2, col=2
-    )
-    
-    fig_aekf.update_xaxes(title_text="Time [s]", row=2, col=1)
-    fig_aekf.update_xaxes(title_text="Time [s]", row=2, col=2)
-    fig_aekf.update_yaxes(title_text="SOC", row=1, col=1)
-    fig_aekf.update_yaxes(title_text="Error [%]", row=1, col=2)
-    fig_aekf.update_yaxes(title_text="Innovation [mV]", row=2, col=1)
-    fig_aekf.update_yaxes(title_text="Temp [K]", row=2, col=2)
-    
-    fig_aekf.update_layout(height=700, template="plotly_white", showlegend=False)
-    safe_add_plot(fig_aekf, "2. AEKF Comprehensive Dashboard", height=700)
-    
-    # Plot 3: UKF Analysis
-    pdf.add_page()
-    pdf.section_title("UKF Detailed Analysis", "")
-    
-    r_ukf = results["ukf"]
-    
-    fig_ukf = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=(
-            "SOC Estimation with 95% CI",
-            "Estimation Error vs Uncertainty",
-            "Uncertainty Evolution",
-            "Temperature Tracking"
-        )
-    )
-    
-    # Similar structure for UKF
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")),
-        row=1, col=1
-    )
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=r_ukf["soc"], name="UKF", line=dict(color="#F18F01")),
-        row=1, col=1
-    )
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=r_ukf["soc"] + 2*r_ukf["sigma"], 
-                   line=dict(width=0), showlegend=False),
-        row=1, col=1
-    )
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=r_ukf["soc"] - 2*r_ukf["sigma"], 
-                   fill='tonexty', fillcolor="rgba(241,143,1,0.2)",
-                   line=dict(width=0), name="95% CI"),
-        row=1, col=1
-    )
-    
-    error_ukf = (r_ukf["soc"] - soc_true) * 100
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=error_ukf, name="Error", line=dict(color="#F18F01")),
-        row=1, col=2
-    )
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=2*r_ukf["sigma"]*100, name="+2sigma",
-                   line=dict(color="gray", dash="dot")),
-        row=1, col=2
-    )
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=-2*r_ukf["sigma"]*100, name="-2sigma",
-                   fill='tonexty', fillcolor="rgba(128,128,128,0.15)",
-                   line=dict(color="gray", dash="dot")),
-        row=1, col=2
-    )
-    
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=r_ukf["sigma"]*100, name="Sigma",
-                   line=dict(color="#F18F01")),
-        row=2, col=1
-    )
-    
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=temp_true, name="DFN Truth",
-                   line=dict(color="black", dash="dash")),
-        row=2, col=2
-    )
-    fig_ukf.add_trace(
-        go.Scatter(x=time, y=r_ukf["temp"], name="UKF Estimate",
-                   line=dict(color="#F18F01")),
-        row=2, col=2
-    )
-    
-    fig_ukf.update_xaxes(title_text="Time [s]", row=2, col=1)
-    fig_ukf.update_xaxes(title_text="Time [s]", row=2, col=2)
-    fig_ukf.update_yaxes(title_text="SOC", row=1, col=1)
-    fig_ukf.update_yaxes(title_text="Error [%]", row=1, col=2)
-    fig_ukf.update_yaxes(title_text="Sigma [%]", row=2, col=1)
-    fig_ukf.update_yaxes(title_text="Temp [K]", row=2, col=2)
-    
-    fig_ukf.update_layout(height=700, template="plotly_white", showlegend=False)
-    safe_add_plot(fig_ukf, "3. UKF Comprehensive Dashboard", height=700)
-    
-    # Plot 4: Dual EKF (if enabled)
-    if enable_dual and "dual" in results:
+        time = asset_data["time"]
+        soc_true = asset_data["soc_true"]
+        voltage_true = asset_data["voltage_true"]
+        temp_true = asset_data["temp_true"]
+        current_meas = asset_data["current_meas"]
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # PAGE 1: COVER & EXECUTIVE SUMMARY
+        # ═══════════════════════════════════════════════════════════════════
         pdf.add_page()
-        pdf.section_title("Dual EKF Analysis", "")
         
-        r_dual = results["dual"]
+        pdf.section_title("Executive Summary", "")
         
-        fig_dual = make_subplots(
+        # Performance metrics table
+        pdf.subsection_title("Global Performance Metrics (Steady-State)")
+        
+        filter_names = ["AEKF", "UKF"]
+        if enable_dual:
+            filter_names.append("Dual EKF")
+        
+        metric_data = {
+            "Filter": filter_names,
+            "SOC RMSE (%)": [],
+            "Voltage RMSE (mV)": [],
+            "PICP (%)": []
+        }
+        
+        for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
+            m = metrics[name]
+            metric_data["SOC RMSE (%)"].append(f"{m['rmse_soc']:.4f}")
+            metric_data["Voltage RMSE (mV)"].append(f"{m['rmse_volt']:.2f}")
+            metric_data["PICP (%)"].append(f"{m['picp']:.1f}")
+        
+        pdf.metric_table(metric_data, col_widths=[50, 45, 50, 45])
+        
+        # Additional metrics
+        pdf.subsection_title("Advanced Uncertainty Quantification Metrics")
+        
+        for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
+            m = metrics[name]
+            pdf.info_box(
+                f"{name.upper()} Detailed Metrics",
+                {
+                    "SOC MAE": f"{m['mae_soc']:.4f} %",
+                    "Innovation RMS": f"{m['innov_rms']:.4f} mV",
+                    "MPIW (Mean Width)": f"{m['mpiw']:.4f} %",
+                    "NIS Consistency": f"{m.get('nis_within', 0):.1f} %" if 'nis_within' in m else "N/A"
+                },
+                bg_color=(245, 250, 255)
+            )
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # PAGE 2: SYSTEM CONFIGURATION
+        # ═══════════════════════════════════════════════════════════════════
+        pdf.add_page()
+        pdf.section_title("System Configuration", "")
+        
+        # Physical Asset Settings
+        pdf.subsection_title("Physical Asset Parameters (PyBaMM DFN)")
+        pdf.info_box(
+            "Operating Conditions",
+            {
+                "Total Cycles": settings.get("Cycles", "N/A"),
+                "Discharge C-rate": settings.get("Discharge C-rate", "N/A"),
+                "Cell Chemistry": "NMC622/Graphite",
+                "Thermal Model": "Lumped (Ohmic + Polarization + Entropic)"
+            },
+            bg_color=(255, 250, 240)
+        )
+        
+        # Sensor Noise Configuration
+        pdf.info_box(
+            "Sensor Noise Levels",
+            {
+                "Voltage Noise sigma [V]": f"{settings.get('Voltage Noise sigma [V]', 0):.4f}",
+                "Temperature Noise sigma [K]": f"{settings.get('Temp Noise sigma [K]', 0):.3f}",
+                "Current Noise sigma [A]": f"{settings.get('Current Noise sigma [A]', 0):.4f}"
+            },
+            bg_color=(255, 250, 240)
+        )
+        
+        # ECM Parameters
+        pdf.subsection_title("Equivalent Circuit Model (2-RC) Parameters")
+        pdf.info_box(
+            "Electrical Parameters",
+            {
+                "R0 [Ohm]": f"{settings.get('R0 [Ohm]', 0):.4f}",
+                "R1 [Ohm]": f"{settings.get('R1 [Ohm]', 0):.4f}",
+                "C1 [F]": f"{settings.get('C1 [F]', 0):.1f}",
+                "R2 [Ohm]": f"{settings.get('R2 [Ohm]', 0):.4f}",
+                "C2 [F]": f"{settings.get('C2 [F]', 0):.1f}"
+            },
+            bg_color=(240, 255, 240)
+        )
+        
+        pdf.info_box(
+            "Thermal Parameters",
+            {
+                "R_thermal [K/W]": f"{settings.get('R_th [K/W]', 0):.2f}",
+                "C_thermal [J/K]": f"{settings.get('C_th [J/K]', 0):.1f}",
+                "T_ambient [K]": f"{settings.get('T_ambient [K]', 0):.2f}"
+            },
+            bg_color=(240, 255, 240)
+        )
+        
+        # Filter Tuning
+        pdf.subsection_title("Kalman Filter Tuning Parameters")
+        
+        P0_vals = settings.get("P0_diag", [0, 0, 0, 0])
+        Q_vals = settings.get("Q_diag", [0, 0, 0, 0])
+        R_vals = settings.get("R_diag", [0, 0])
+        
+        pdf.info_box(
+            "Initial Covariance P0",
+            {
+                "P0_SOC": f"{P0_vals[0]:.6e}",
+                "P0_V1": f"{P0_vals[1]:.6e}",
+                "P0_V2": f"{P0_vals[2]:.6e}",
+                "P0_T": f"{P0_vals[3]:.6e}"
+            },
+            bg_color=(255, 245, 245)
+        )
+        
+        pdf.info_box(
+            "Process Noise Q",
+            {
+                "Q_SOC": f"{Q_vals[0]:.6e}",
+                "Q_V1": f"{Q_vals[1]:.6e}",
+                "Q_V2": f"{Q_vals[2]:.6e}",
+                "Q_T": f"{Q_vals[3]:.6e}"
+            },
+            bg_color=(255, 245, 245)
+        )
+        
+        pdf.info_box(
+            "Measurement Noise R",
+            {
+                "R_Voltage": f"{R_vals[0]:.6e}",
+                "R_Temperature": f"{R_vals[1]:.6e}",
+                "Q_w (Dual EKF)": f"{settings.get('Q_w_dual', 0):.6e}" if enable_dual else "N/A"
+            },
+            bg_color=(255, 245, 245)
+        )
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # PAGES 3+: COMPREHENSIVE PLOTS
+        # ═══════════════════════════════════════════════════════════════════
+        
+        def safe_add_plot(fig, title, width=1000, height=600):
+            """Safely add a plot to PDF with error handling"""
+            if pdf.get_y() > 200:
+                pdf.add_page()
+            
+            pdf.subsection_title(title)
+            
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                    pio.write_image(fig, tmp.name, format="png", width=width, height=height, scale=2)
+                    
+                    available_height = 297 - pdf.get_y() - 20  # A4 height - current y - margin
+                    img_height = min(110, available_height)
+                    
+                    pdf.image(tmp.name, x=15, y=pdf.get_y(), w=180, h=img_height)
+                    pdf.ln(img_height + 5)
+                    os.remove(tmp.name)
+            except Exception as e:
+                pdf.set_font("helvetica", "I", 9)
+                pdf.set_text_color(200, 0, 0)
+                pdf.cell(0, 6, f"Error generating plot: {str(e)}", ln=True)
+                pdf.set_text_color(40, 40, 40)
+        
+        # Plot 1: SOC Comparison (All Filters)
+        pdf.add_page()
+        pdf.section_title("SOC Estimation Analysis", "")
+        
+        fig_soc = go.Figure()
+        fig_soc.add_trace(go.Scatter(x=time, y=soc_true, name="DFN Truth", 
+                                     line=dict(color="#2E86AB", width=3)))
+        
+        colors_map = {"aekf": "#A23B72", "ukf": "#F18F01", "dual": "#06A77D"}
+        for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
+            r = results[name]
+            fig_soc.add_trace(go.Scatter(x=time, y=r["soc"], name=name.upper(),
+                                         line=dict(color=colors_map[name], width=2)))
+        
+        fig_soc.update_layout(
+            title="SOC Tracking: All Filters vs DFN Truth",
+            xaxis_title="Time [s]",
+            yaxis_title="SOC [-]",
+            template="plotly_white",
+            height=500
+        )
+        safe_add_plot(fig_soc, "1. State-of-Charge Tracking Performance")
+        
+        # Plot 2: AEKF Detailed Analysis
+        pdf.add_page()
+        pdf.section_title("AEKF Detailed Analysis", "")
+        
+        r_aekf = results["aekf"]
+        
+        fig_aekf = make_subplots(
             rows=2, cols=2,
             subplot_titles=(
-                "Online R0 Estimation",
-                "SOC Tracking Performance",
+                "SOC Estimation with 95% CI",
                 "Estimation Error vs Uncertainty",
+                "Voltage Innovation Sequence",
                 "Temperature Tracking"
             )
         )
         
-        # R0 tracking
-        r0_est_plot = r_dual["R0_est"] * 1000  # Convert to mOhm
-        sigma_r0_plot = r_dual["sigma_R0"] * 1000
-        
-        fig_dual.add_trace(
-            go.Scatter(x=time, y=r0_est_plot, name="R0 Estimate",
-                       line=dict(color="#06A77D")),
+        # Subplot 1: SOC with CI
+        fig_aekf.add_trace(
+            go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")),
             row=1, col=1
         )
-        fig_dual.add_trace(
-            go.Scatter(x=time, y=r0_est_plot + 2*sigma_r0_plot,
+        fig_aekf.add_trace(
+            go.Scatter(x=time, y=r_aekf["soc"], name="AEKF", line=dict(color="#A23B72")),
+            row=1, col=1
+        )
+        fig_aekf.add_trace(
+            go.Scatter(x=time, y=r_aekf["soc"] + 2*r_aekf["sigma"], 
                        line=dict(width=0), showlegend=False),
             row=1, col=1
         )
-        fig_dual.add_trace(
-            go.Scatter(x=time, y=r0_est_plot - 2*sigma_r0_plot,
-                       fill='tonexty', fillcolor="rgba(6,167,125,0.2)",
+        fig_aekf.add_trace(
+            go.Scatter(x=time, y=r_aekf["soc"] - 2*r_aekf["sigma"], 
+                       fill='tonexty', fillcolor="rgba(162,59,114,0.2)",
                        line=dict(width=0), name="95% CI"),
             row=1, col=1
         )
         
-        # SOC tracking
-        fig_dual.add_trace(
-            go.Scatter(x=time, y=soc_true, name="Truth",
-                       line=dict(color="black", dash="dash")),
+        # Subplot 2: Error vs Uncertainty
+        error_aekf = (r_aekf["soc"] - soc_true) * 100
+        fig_aekf.add_trace(
+            go.Scatter(x=time, y=error_aekf, name="Error", line=dict(color="#A23B72")),
             row=1, col=2
         )
-        fig_dual.add_trace(
-            go.Scatter(x=time, y=r_dual["soc"], name="Dual EKF",
-                       line=dict(color="#06A77D")),
-            row=1, col=2
-        )
-        
-        # Error analysis
-        error_dual = (r_dual["soc"] - soc_true) * 100
-        fig_dual.add_trace(
-            go.Scatter(x=time, y=error_dual, name="Error",
-                       line=dict(color="#06A77D")),
-            row=2, col=1
-        )
-        fig_dual.add_trace(
-            go.Scatter(x=time, y=2*r_dual["sigma"]*100, name="+2sigma",
+        fig_aekf.add_trace(
+            go.Scatter(x=time, y=2*r_aekf["sigma"]*100, name="+2sigma", 
                        line=dict(color="gray", dash="dot")),
-            row=2, col=1
+            row=1, col=2
         )
-        fig_dual.add_trace(
-            go.Scatter(x=time, y=-2*r_dual["sigma"]*100, name="-2sigma",
+        fig_aekf.add_trace(
+            go.Scatter(x=time, y=-2*r_aekf["sigma"]*100, name="-2sigma",
                        fill='tonexty', fillcolor="rgba(128,128,128,0.15)",
                        line=dict(color="gray", dash="dot")),
+            row=1, col=2
+        )
+        
+        # Subplot 3: Innovation
+        fig_aekf.add_trace(
+            go.Scatter(x=time, y=r_aekf["innov"], name="Innovation",
+                       line=dict(color="#A23B72")),
             row=2, col=1
         )
         
-        # Temperature
-        fig_dual.add_trace(
+        # Subplot 4: Temperature
+        fig_aekf.add_trace(
             go.Scatter(x=time, y=temp_true, name="DFN Truth",
                        line=dict(color="black", dash="dash")),
             row=2, col=2
         )
-        fig_dual.add_trace(
-            go.Scatter(x=time, y=r_dual["temp"], name="Dual Estimate",
-                       line=dict(color="#06A77D")),
+        fig_aekf.add_trace(
+            go.Scatter(x=time, y=r_aekf["temp"], name="AEKF Estimate",
+                       line=dict(color="#A23B72")),
             row=2, col=2
         )
         
-        fig_dual.update_xaxes(title_text="Time [s]", row=2, col=1)
-        fig_dual.update_xaxes(title_text="Time [s]", row=2, col=2)
-        fig_dual.update_yaxes(title_text="R0 [mOhm]", row=1, col=1)
-        fig_dual.update_yaxes(title_text="SOC", row=1, col=2)
-        fig_dual.update_yaxes(title_text="Error [%]", row=2, col=1)
-        fig_dual.update_yaxes(title_text="Temp [K]", row=2, col=2)
+        fig_aekf.update_xaxes(title_text="Time [s]", row=2, col=1)
+        fig_aekf.update_xaxes(title_text="Time [s]", row=2, col=2)
+        fig_aekf.update_yaxes(title_text="SOC", row=1, col=1)
+        fig_aekf.update_yaxes(title_text="Error [%]", row=1, col=2)
+        fig_aekf.update_yaxes(title_text="Innovation [mV]", row=2, col=1)
+        fig_aekf.update_yaxes(title_text="Temp [K]", row=2, col=2)
         
-        fig_dual.update_layout(height=700, template="plotly_white", showlegend=False)
-        safe_add_plot(fig_dual, "4. Dual EKF Comprehensive Dashboard", height=700)
-    
-    # Plot 5: Comparative Analysis
-    pdf.add_page()
-    pdf.section_title("Comparative Filter Analysis", "")
-    
-    fig_comp = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=(
-            "Absolute SOC Error Comparison",
-            "Uncertainty Envelope Comparison",
-            "Innovation Sequence Comparison",
-            "NIS Consistency Test"
+        fig_aekf.update_layout(height=700, template="plotly_white", showlegend=False)
+        safe_add_plot(fig_aekf, "2. AEKF Comprehensive Dashboard", height=700)
+        
+        # Plot 3: UKF Analysis
+        pdf.add_page()
+        pdf.section_title("UKF Detailed Analysis", "")
+        
+        r_ukf = results["ukf"]
+        
+        fig_ukf = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=(
+                "SOC Estimation with 95% CI",
+                "Estimation Error vs Uncertainty",
+                "Uncertainty Evolution",
+                "Temperature Tracking"
+            )
         )
-    )
-    
-    # Error comparison
-    for name, color in [("aekf", "#A23B72"), ("ukf", "#F18F01")] + ([("dual", "#06A77D")] if enable_dual else []):
-        r = results[name]
-        error = np.abs(r["soc"] - soc_true) * 100
-        fig_comp.add_trace(
-            go.Scatter(x=time, y=error, name=name.upper(),
-                       line=dict(color=color)),
+        
+        # Similar structure for UKF
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=soc_true, name="Truth", line=dict(color="black", dash="dash")),
             row=1, col=1
         )
-    
-    # Uncertainty comparison
-    for name, color in [("aekf", "#A23B72"), ("ukf", "#F18F01")] + ([("dual", "#06A77D")] if enable_dual else []):
-        r = results[name]
-        fig_comp.add_trace(
-            go.Scatter(x=time, y=r["sigma"]*100, name=name.upper(),
-                       line=dict(color=color)),
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=r_ukf["soc"], name="UKF", line=dict(color="#F18F01")),
+            row=1, col=1
+        )
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=r_ukf["soc"] + 2*r_ukf["sigma"], 
+                       line=dict(width=0), showlegend=False),
+            row=1, col=1
+        )
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=r_ukf["soc"] - 2*r_ukf["sigma"], 
+                       fill='tonexty', fillcolor="rgba(241,143,1,0.2)",
+                       line=dict(width=0), name="95% CI"),
+            row=1, col=1
+        )
+        
+        error_ukf = (r_ukf["soc"] - soc_true) * 100
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=error_ukf, name="Error", line=dict(color="#F18F01")),
             row=1, col=2
         )
-    
-    # Innovation comparison
-    for name, color in [("aekf", "#A23B72"), ("ukf", "#F18F01")] + ([("dual", "#06A77D")] if enable_dual else []):
-        r = results[name]
-        fig_comp.add_trace(
-            go.Scatter(x=time, y=r["innov"], name=name.upper(),
-                       line=dict(color=color)),
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=2*r_ukf["sigma"]*100, name="+2sigma",
+                       line=dict(color="gray", dash="dot")),
+            row=1, col=2
+        )
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=-2*r_ukf["sigma"]*100, name="-2sigma",
+                       fill='tonexty', fillcolor="rgba(128,128,128,0.15)",
+                       line=dict(color="gray", dash="dot")),
+            row=1, col=2
+        )
+        
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=r_ukf["sigma"]*100, name="Sigma",
+                       line=dict(color="#F18F01")),
             row=2, col=1
         )
-    
-    # NIS comparison
-    chi2_thr = chi2.ppf(0.95, df=2)
-    for name, color in [("aekf", "#A23B72"), ("ukf", "#F18F01")] + ([("dual", "#06A77D")] if enable_dual else []):
-        r = results[name]
-        if "nis" in r and len(r["nis"]) > 0:
-            w = min(50, max(5, len(time)//20))
-            smooth_nis = np.convolve(r["nis"], np.ones(w)/w, "same")
-            fig_comp.add_trace(
-                go.Scatter(x=time, y=smooth_nis, name=name.upper(),
-                           line=dict(color=color)),
+        
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=temp_true, name="DFN Truth",
+                       line=dict(color="black", dash="dash")),
+            row=2, col=2
+        )
+        fig_ukf.add_trace(
+            go.Scatter(x=time, y=r_ukf["temp"], name="UKF Estimate",
+                       line=dict(color="#F18F01")),
+            row=2, col=2
+        )
+        
+        fig_ukf.update_xaxes(title_text="Time [s]", row=2, col=1)
+        fig_ukf.update_xaxes(title_text="Time [s]", row=2, col=2)
+        fig_ukf.update_yaxes(title_text="SOC", row=1, col=1)
+        fig_ukf.update_yaxes(title_text="Error [%]", row=1, col=2)
+        fig_ukf.update_yaxes(title_text="Sigma [%]", row=2, col=1)
+        fig_ukf.update_yaxes(title_text="Temp [K]", row=2, col=2)
+        
+        fig_ukf.update_layout(height=700, template="plotly_white", showlegend=False)
+        safe_add_plot(fig_ukf, "3. UKF Comprehensive Dashboard", height=700)
+        
+        # Plot 4: Dual EKF (if enabled)
+        if enable_dual and "dual" in results:
+            pdf.add_page()
+            pdf.section_title("Dual EKF Analysis", "")
+            
+            r_dual = results["dual"]
+            
+            fig_dual = make_subplots(
+                rows=2, cols=2,
+                subplot_titles=(
+                    "Online R0 Estimation",
+                    "SOC Tracking Performance",
+                    "Estimation Error vs Uncertainty",
+                    "Temperature Tracking"
+                )
+            )
+            
+            # R0 tracking
+            r0_est_plot = r_dual["R0_est"] * 1000  # Convert to mOhm
+            sigma_r0_plot = r_dual["sigma_R0"] * 1000
+            
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=r0_est_plot, name="R0 Estimate",
+                           line=dict(color="#06A77D")),
+                row=1, col=1
+            )
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=r0_est_plot + 2*sigma_r0_plot,
+                           line=dict(width=0), showlegend=False),
+                row=1, col=1
+            )
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=r0_est_plot - 2*sigma_r0_plot,
+                           fill='tonexty', fillcolor="rgba(6,167,125,0.2)",
+                           line=dict(width=0), name="95% CI"),
+                row=1, col=1
+            )
+            
+            # SOC tracking
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=soc_true, name="Truth",
+                           line=dict(color="black", dash="dash")),
+                row=1, col=2
+            )
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=r_dual["soc"], name="Dual EKF",
+                           line=dict(color="#06A77D")),
+                row=1, col=2
+            )
+            
+            # Error analysis
+            error_dual = (r_dual["soc"] - soc_true) * 100
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=error_dual, name="Error",
+                           line=dict(color="#06A77D")),
+                row=2, col=1
+            )
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=2*r_dual["sigma"]*100, name="+2sigma",
+                           line=dict(color="gray", dash="dot")),
+                row=2, col=1
+            )
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=-2*r_dual["sigma"]*100, name="-2sigma",
+                           fill='tonexty', fillcolor="rgba(128,128,128,0.15)",
+                           line=dict(color="gray", dash="dot")),
+                row=2, col=1
+            )
+            
+            # Temperature
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=temp_true, name="DFN Truth",
+                           line=dict(color="black", dash="dash")),
                 row=2, col=2
             )
-    
-    fig_comp.add_hline(y=chi2_thr, line_dash="dash", line_color="#D62828",
-                       annotation_text=f"Chi2(0.95)={chi2_thr:.2f}",
-                       row=2, col=2)
-    
-    fig_comp.update_xaxes(title_text="Time [s]", row=2, col=1)
-    fig_comp.update_xaxes(title_text="Time [s]", row=2, col=2)
-    fig_comp.update_yaxes(title_text="Error [%]", row=1, col=1)
-    fig_comp.update_yaxes(title_text="Sigma [%]", row=1, col=2)
-    fig_comp.update_yaxes(title_text="Innovation [mV]", row=2, col=1)
-    fig_comp.update_yaxes(title_text="NIS", row=2, col=2)
-    
-    fig_comp.update_layout(height=700, template="plotly_white")
-    safe_add_plot(fig_comp, "5. Multi-Filter Comparative Dashboard", height=700)
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # CYCLE-BY-CYCLE ANALYSIS
-    # ═══════════════════════════════════════════════════════════════════
-    pdf.add_page()
-    pdf.section_title("Cycle-by-Cycle Performance Analysis", "")
-    
-    pdf.set_font("helvetica", "", 9)
-    pdf.multi_cell(0, 5, 
-        "The following table shows detailed performance metrics for each charge-discharge cycle. "
-        "This granular analysis reveals filter performance evolution and consistency across operating conditions.")
-    pdf.ln(3)
-    
-    # Cycle table
-    if len(cycle_df) > 0:
-        col_count = len(cycle_df.columns)
-        col_width = 190 / col_count
+            fig_dual.add_trace(
+                go.Scatter(x=time, y=r_dual["temp"], name="Dual Estimate",
+                           line=dict(color="#06A77D")),
+                row=2, col=2
+            )
+            
+            fig_dual.update_xaxes(title_text="Time [s]", row=2, col=1)
+            fig_dual.update_xaxes(title_text="Time [s]", row=2, col=2)
+            fig_dual.update_yaxes(title_text="R0 [mOhm]", row=1, col=1)
+            fig_dual.update_yaxes(title_text="SOC", row=1, col=2)
+            fig_dual.update_yaxes(title_text="Error [%]", row=2, col=1)
+            fig_dual.update_yaxes(title_text="Temp [K]", row=2, col=2)
+            
+            fig_dual.update_layout(height=700, template="plotly_white", showlegend=False)
+            safe_add_plot(fig_dual, "4. Dual EKF Comprehensive Dashboard", height=700)
         
-        pdf.set_fill_color(230, 240, 250)
-        pdf.set_font("helvetica", "B", 7)
+        # Plot 5: Comparative Analysis
+        pdf.add_page()
+        pdf.section_title("Comparative Filter Analysis", "")
         
-        for col in cycle_df.columns:
-            pdf.cell(col_width, 7, str(col)[:15], border=1, align="C", fill=True)
-        pdf.ln()
+        fig_comp = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=(
+                "Absolute SOC Error Comparison",
+                "Uncertainty Envelope Comparison",
+                "Innovation Sequence Comparison",
+                "NIS Consistency Test"
+            )
+        )
         
-        pdf.set_font("helvetica", "", 7)
-        for idx, row in cycle_df.iterrows():
-            for val in row:
-                pdf.cell(col_width, 6, str(val), border=1, align="C")
+        # Error comparison
+        for name, color in [("aekf", "#A23B72"), ("ukf", "#F18F01")] + ([("dual", "#06A77D")] if enable_dual else []):
+            r = results[name]
+            error = np.abs(r["soc"] - soc_true) * 100
+            fig_comp.add_trace(
+                go.Scatter(x=time, y=error, name=name.upper(),
+                           line=dict(color=color)),
+                row=1, col=1
+            )
+        
+        # Uncertainty comparison
+        for name, color in [("aekf", "#A23B72"), ("ukf", "#F18F01")] + ([("dual", "#06A77D")] if enable_dual else []):
+            r = results[name]
+            fig_comp.add_trace(
+                go.Scatter(x=time, y=r["sigma"]*100, name=name.upper(),
+                           line=dict(color=color)),
+                row=1, col=2
+            )
+        
+        # Innovation comparison
+        for name, color in [("aekf", "#A23B72"), ("ukf", "#F18F01")] + ([("dual", "#06A77D")] if enable_dual else []):
+            r = results[name]
+            fig_comp.add_trace(
+                go.Scatter(x=time, y=r["innov"], name=name.upper(),
+                           line=dict(color=color)),
+                row=2, col=1
+            )
+        
+        # NIS comparison
+        chi2_thr = chi2.ppf(0.95, df=2)
+        for name, color in [("aekf", "#A23B72"), ("ukf", "#F18F01")] + ([("dual", "#06A77D")] if enable_dual else []):
+            r = results[name]
+            if "nis" in r and len(r["nis"]) > 0:
+                w = min(50, max(5, len(time)//20))
+                smooth_nis = np.convolve(r["nis"], np.ones(w)/w, "same")
+                fig_comp.add_trace(
+                    go.Scatter(x=time, y=smooth_nis, name=name.upper(),
+                               line=dict(color=color)),
+                    row=2, col=2
+                )
+        
+        fig_comp.add_hline(y=chi2_thr, line_dash="dash", line_color="#D62828",
+                           annotation_text=f"Chi2(0.95)={chi2_thr:.2f}",
+                           row=2, col=2)
+        
+        fig_comp.update_xaxes(title_text="Time [s]", row=2, col=1)
+        fig_comp.update_xaxes(title_text="Time [s]", row=2, col=2)
+        fig_comp.update_yaxes(title_text="Error [%]", row=1, col=1)
+        fig_comp.update_yaxes(title_text="Sigma [%]", row=1, col=2)
+        fig_comp.update_yaxes(title_text="Innovation [mV]", row=2, col=1)
+        fig_comp.update_yaxes(title_text="NIS", row=2, col=2)
+        
+        fig_comp.update_layout(height=700, template="plotly_white")
+        safe_add_plot(fig_comp, "5. Multi-Filter Comparative Dashboard", height=700)
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # CYCLE-BY-CYCLE ANALYSIS
+        # ═══════════════════════════════════════════════════════════════════
+        pdf.add_page()
+        pdf.section_title("Cycle-by-Cycle Performance Analysis", "")
+        
+        pdf.set_font("helvetica", "", 9)
+        pdf.multi_cell(0, 5, 
+            "The following table shows detailed performance metrics for each charge-discharge cycle. "
+            "This granular analysis reveals filter performance evolution and consistency across operating conditions.")
+        pdf.ln(3)
+        
+        # Cycle table
+        if len(cycle_df) > 0:
+            col_count = len(cycle_df.columns)
+            col_width = 190 / col_count
+            
+            pdf.set_fill_color(230, 240, 250)
+            pdf.set_font("helvetica", "B", 7)
+            
+            for col in cycle_df.columns:
+                pdf.cell(col_width, 7, str(col)[:15], border=1, align="C", fill=True)
             pdf.ln()
+            
+            pdf.set_font("helvetica", "", 7)
+            for idx, row in cycle_df.iterrows():
+                for val in row:
+                    pdf.cell(col_width, 6, str(val), border=1, align="C")
+                pdf.ln()
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # FINAL PAGE: CONCLUSIONS
+        # ═══════════════════════════════════════════════════════════════════
+        pdf.add_page()
+        pdf.section_title("Conclusions & Recommendations", "")
+        
+        pdf.set_font("helvetica", "", 10)
+        
+        # Find best performing filter
+        best_filter = min(["aekf", "ukf"] + (["dual"] if enable_dual else []),
+                          key=lambda x: metrics[x]["rmse_soc"])
+        
+        conclusions = f"""
+    This comprehensive digital twin analysis evaluated {len(filter_names)} advanced state estimation algorithms 
+    for NMC622 battery SOC and thermal tracking using a high-fidelity DFN physical asset model.
     
-    # ═══════════════════════════════════════════════════════════════════
-    # FINAL PAGE: CONCLUSIONS
-    # ═══════════════════════════════════════════════════════════════════
-    pdf.add_page()
-    pdf.section_title("Conclusions & Recommendations", "")
+    KEY FINDINGS:
     
-    pdf.set_font("helvetica", "", 10)
+    1. ACCURACY PERFORMANCE:
+       - Best SOC RMSE: {metrics[best_filter]['rmse_soc']:.4f}% ({best_filter.upper()})
+       - Best Voltage RMSE: {metrics[best_filter]['rmse_volt']:.2f} mV ({best_filter.upper()})
+       - All filters achieved PICP > 85%, indicating reliable uncertainty quantification
     
-    # Find best performing filter
-    best_filter = min(["aekf", "ukf"] + (["dual"] if enable_dual else []),
-                      key=lambda x: metrics[x]["rmse_soc"])
+    2. UNCERTAINTY QUANTIFICATION:
+       - Innovation sequences show consistent white-noise characteristics
+       - NIS tests confirm statistical consistency of covariance estimates
+       - Adaptive features successfully track time-varying dynamics
     
-    conclusions = f"""
-This comprehensive digital twin analysis evaluated {len(filter_names)} advanced state estimation algorithms 
-for NMC622 battery SOC and thermal tracking using a high-fidelity DFN physical asset model.
-
-KEY FINDINGS:
-
-1. ACCURACY PERFORMANCE:
-   - Best SOC RMSE: {metrics[best_filter]['rmse_soc']:.4f}% ({best_filter.upper()})
-   - Best Voltage RMSE: {metrics[best_filter]['rmse_volt']:.2f} mV ({best_filter.upper()})
-   - All filters achieved PICP > 85%, indicating reliable uncertainty quantification
-
-2. UNCERTAINTY QUANTIFICATION:
-   - Innovation sequences show consistent white-noise characteristics
-   - NIS tests confirm statistical consistency of covariance estimates
-   - Adaptive features successfully track time-varying dynamics
-
-3. THERMAL MODELING:
-   - Comprehensive heat generation model (Ohmic + Polarization + Entropic)
-   - Temperature tracking error < 1K across all operating conditions
-   - Arrhenius corrections properly account for thermal effects on resistance
-"""
-
-    if enable_dual:
-        conclusions += f"""
-4. DUAL EKF PARAMETER TRACKING:
-   - Online R0 estimation converged to {results['dual']['R0_est'][-1]*1000:.2f} mOhm
-   - Parameter uncertainty properly quantified (sigma_R0 = {results['dual']['sigma_R0'][-1]*1000:.4f} mOhm)
-   - Dual estimation framework enables adaptive model calibration
-"""
-
-    conclusions += """
-RECOMMENDATIONS:
-
-1. Deploy the best-performing filter configuration for production BMS integration
-2. Maintain continuous UQ monitoring to detect model degradation
-3. Consider hybrid approaches combining multiple filters for mission-critical applications
-4. Extend framework to multi-cell pack-level estimation with inter-cell coupling
-
-TECHNICAL NOTES:
-
-- All simulations validated against PyBaMM DFN electrochemical model
-- Measurement noise levels represent typical automotive-grade sensor specifications
-- Filter tuning optimized for balance between tracking speed and stability
-- Results reproducible with provided configuration parameters
-"""
+    3. THERMAL MODELING:
+       - Comprehensive heat generation model (Ohmic + Polarization + Entropic)
+       - Temperature tracking error < 1K across all operating conditions
+       - Arrhenius corrections properly account for thermal effects on resistance
+    """
     
-    pdf.multi_cell(0, 5, conclusions)
+        if enable_dual:
+            conclusions += f"""
+    4. DUAL EKF PARAMETER TRACKING:
+       - Online R0 estimation converged to {results['dual']['R0_est'][-1]*1000:.2f} mOhm
+       - Parameter uncertainty properly quantified (sigma_R0 = {results['dual']['sigma_R0'][-1]*1000:.4f} mOhm)
+       - Dual estimation framework enables adaptive model calibration
+    """
     
-    # Final metadata
-    pdf.ln(5)
-    pdf.set_font("helvetica", "I", 8)
-    pdf.set_text_color(128, 128, 128)
-    pdf.multi_cell(0, 4, 
-        f"Report generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"Total simulation time: {time[-1]:.1f} seconds ({time[-1]/3600:.2f} hours)\n"
-        f"Data points analyzed: {len(time)}\n"
-        f"Framework: PyBaMM + Adaptive EKF/UKF/Dual-EKF")
+        conclusions += """
+    RECOMMENDATIONS:
     
-    return bytes(pdf.output())
+    1. Deploy the best-performing filter configuration for production BMS integration
+    2. Maintain continuous UQ monitoring to detect model degradation
+    3. Consider hybrid approaches combining multiple filters for mission-critical applications
+    4. Extend framework to multi-cell pack-level estimation with inter-cell coupling
+    
+    TECHNICAL NOTES:
+    
+    - All simulations validated against PyBaMM DFN electrochemical model
+    - Measurement noise levels represent typical automotive-grade sensor specifications
+    - Filter tuning optimized for balance between tracking speed and stability
+    - Results reproducible with provided configuration parameters
+    """
+        
+        pdf.multi_cell(0, 5, conclusions)
+        
+        # Final metadata
+        pdf.ln(5)
+        pdf.set_font("helvetica", "I", 8)
+        pdf.set_text_color(128, 128, 128)
+        pdf.multi_cell(0, 4, 
+            f"Report generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"Total simulation time: {time[-1]:.1f} seconds ({time[-1]/3600:.2f} hours)\n"
+            f"Data points analyzed: {len(time)}\n"
+            f"Framework: PyBaMM + Adaptive EKF/UKF/Dual-EKF")
+        
+        return bytes(pdf.output())
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
