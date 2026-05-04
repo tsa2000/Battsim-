@@ -1,5 +1,3 @@
-
-gfortran
 libnss3
 libnspr4
 libatk-bridge2.0-0
