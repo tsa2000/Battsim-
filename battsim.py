@@ -943,7 +943,7 @@ with st.expander("📐 System Architecture", expanded=False):
 
         run_btn = st.button("🚀 Run Digital Twin", use_container_width=True)
         
-    if run_btn:
+if run_btn:
         bar = st.progress(0)
         stat = st.empty()
     
