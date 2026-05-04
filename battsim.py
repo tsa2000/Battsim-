@@ -873,18 +873,27 @@ def main():
     )
 
     with st.expander("📐 System Architecture", expanded=False):
-        st.markdown("""
-PHYSICAL ASSET          DIGITAL TWIN
-────────────────        ────────────────────────────────────────
-PyBaMM DFN (Chen2020)  → AEKF  (Linearized Jacobians + Chain Rule)
-Lumped Thermal Model   → UKF   (Unscented Transform, α=0.1)
-Sensor Noise (V,T,I)   → PF    (Bootstrap SIR, N particles)
-                       → Dual EKF (State + R₀ online estimation)
+    col1, col2 = st.columns(2)
 
-Heat Model: Q = Q_ohmic + Q_polarization + Q_entropic
-Parameter Track: R₀(k) via random-walk EKF
-UQ Metrics: RMSE_SOC, RMSE_Volt, PICP, MPIW, NIS
-        """)
+    with col1:
+        st.info('''
+        ### 🔋 Machine 1: Physical Asset
+        * **Base Model:** PyBaMM DFN (Chen2020)
+        * **Cell Chemistry:** NMC622 / Graphite
+        * **Thermodynamics:** Lumped Thermal Model
+        * **Heat Sources:** Ohmic + Polarization + Entropic
+        * **Sensors:** V/I/T measurement noise added
+        ''')
+
+    with col2:
+        st.success('''
+        ### 🧠 Machine 2: Digital Twin
+        * **Equivalent Circuit Model:** 2-RC ECM
+        * **Estimation Filters:** AEKF | UKF | Dual EKF
+        * **Adaptive Features:** Online R₀ parameter estimation
+        * **UQ Metrics:** RMSE, MAE, PICP, MPIW, NIS
+        ''')
+
 
     with st.sidebar:
         st.header("⚙️ Configuration")
