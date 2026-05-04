@@ -989,36 +989,43 @@ with st.expander("📐 System Architecture", expanded=False):
         )
     
         bar.progress(100)
-        stat.success("✅ Machine 1 & 2 Synchronization Complete!")
+        stat.success("✅ Simulation Complete!")
     
         st.session_state['sim_results'] = {
             "asset_data": asset_data,
             "results": results,
             "metrics": metrics,
             "cycle_df": cycle_df,
-            "ecm_params": ecm_params,
-            "filter_params": filter_params,
             "fig": fig,
-            "enable_dual": enable_dual
+            "cutoff": cutoff,
+            "enable_dual": enable_dual,
         }
-        bar.progress(100)
-        stat.success(f"✅ Done — steady-state metrics exclude first {cutoff} samples (10%)")
-
+        st.rerun()
+    
+    # ══════════════════════════════════════════
+    # DISPLAY BLOCK
+    # ══════════════════════════════════════════
+    if 'sim_results' in st.session_state:
+        res = st.session_state['sim_results']
+    
+        fig = res["fig"]
+        cycle_df = res["cycle_df"]
+        metrics = res["metrics"]
+        asset_data = res["asset_data"]
+        results = res["results"]
+        enable_dual = res["enable_dual"]
+    
         st.plotly_chart(fig, use_container_width=True)
-
+    
         st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
         st.dataframe(cycle_df, use_container_width=True)
-
+    
         st.subheader("📈 Performance Metrics (Steady-State)")
-
-        filter_names = ["aekf", "ukf"]
-        if enable_pf   and "pf"   in metrics: filter_names.append("pf")
-        if enable_dual and "dual" in metrics: filter_names.append("dual")
-
+    
+        filter_names = list(metrics.keys())
         cols = st.columns(len(filter_names))
-        labels = {"aekf": "🎯 AEKF", "ukf": "🧠 UKF",
-                  "pf": "🌫️ PF", "dual": "⚡ Dual EKF"}
-
+        labels = {"aekf": "🎯 AEKF", "ukf": "🧠 UKF", "pf": "🌫️ PF", "dual": "⚡ Dual EKF"}
+    
         for col, name in zip(cols, filter_names):
             m = metrics[name]
             with col:
@@ -1027,50 +1034,31 @@ with st.expander("📐 System Architecture", expanded=False):
                 st.metric("Voltage RMSE", f"{m['rmse_volt']:.2f} mV")
                 st.metric("SOC MAE",      f"{m['mae_soc']:.4f} %")
                 st.metric("PICP",         f"{m['picp']:.1f} %")
-                st.metric("MPIW",         f"{m['mpiw']:.4f} %")
                 if "nis_within" in m:
                     st.metric("NIS within χ²", f"{m['nis_within']:.1f} %")
                 if name == "dual" and "dual" in results:
                     r0_arr = results["dual"]["R0_est"]
                     st.metric("R₀ final estimate", f"{r0_arr[-1]*1000:.2f} mΩ")
-
+    
         if enable_dual and "dual" in results:
             with st.expander("🔧 R₀ Tracking Details"):
                 r0 = results["dual"]["R0_est"]
                 sr = results["dual"]["sigma_R0"]
                 st.write(
                     f"**Initial R₀:** {r0[0]*1000:.2f} mΩ  |  "
-                    f"**Final R₀:** {r0[-1]*1000:.2f} mΩ  |  "
-                    f"**Δ:** {(r0[-1]-r0[0])*1000:+.2f} mΩ"
+                    f"**Final R₀:** {r0[-1]*1000:.2f} mΩ"
                 )
                 fig_r0 = go.Figure()
                 fig_r0.add_trace(go.Scatter(
-                    x=asset_data["time"], y=r0*1000,
+                    x=asset_data["time"], y=r0 * 1000,
                     name="R₀ Estimated [mΩ]", line=dict(color="#2E86AB", width=2)
                 ))
-                fig_r0.add_trace(go.Scatter(
-                    x=asset_data["time"], y=(r0+2*sr)*1000,
-                    mode="lines", line=dict(width=0), showlegend=False
-                ))
-                fig_r0.add_trace(go.Scatter(
-                    x=asset_data["time"], y=(r0-2*sr)*1000, fill="tonexty",
-                    fillcolor="rgba(46,134,171,0.15)",
-                    line=dict(width=0), name="95% CI"
-                ))
-                fig_r0.update_layout(
-                    template="plotly_white", height=300,
-                    xaxis_title="Time [s]", yaxis_title="R₀ [mΩ]",
-                    title="Online R₀ Estimation — Dual EKF"
-                )
+                fig_r0.update_layout(template="plotly_white", height=300, title="Online R₀ Estimation")
                 st.plotly_chart(fig_r0, use_container_width=True)
-
-        st.info(
-            "**Notes:** "
-            "Voltage RMSE = ‖V_DFN − V_ECM_reconstructed‖, not innovation. "
-            "Entropic heating −I·T·(dU/dT) included in thermal model. "
-            "Dual EKF tracks R₀ via random-walk prior; Q_w controls adaptation speed."
-        )
-
+    
+        st.info("**Notes:** Voltage RMSE = ‖V_DFN − V_ECM_reconstructed‖. Entropic heating included.")
+    
+    
 
 if __name__ == "__main__":
     main()
