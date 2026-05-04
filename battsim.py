@@ -660,22 +660,18 @@ def compute_metrics(asset_data, results, ecm, enable_pf=True, enable_dual=True):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def detect_cycles(time, current, threshold=0.1):
-    cycle_markers = []
-    cycle_start = 0
-    was_discharge = current[0] < -threshold
+    cycle_starts = [0]
 
     for i in range(1, len(current)):
-        is_discharge = current[i] < -threshold
+        if current[i - 1] >= -threshold and current[i] < -threshold:
+            if (i - cycle_starts[-1]) > 100:
+                cycle_starts.append(i)
 
-        if is_discharge and not was_discharge:
-            if (i - cycle_start) > 20:
-                cycle_markers.append((cycle_start, i - 1))
-                cycle_start = i
+    cycle_markers = []
+    for i in range(len(cycle_starts) - 1):
+        cycle_markers.append((cycle_starts[i], cycle_starts[i + 1] - 1))
 
-        was_discharge = is_discharge
-
-    if (len(current) - 1 - cycle_start) > 20:
-        cycle_markers.append((cycle_start, len(current) - 1))
+    cycle_markers.append((cycle_starts[-1], len(current) - 1))
 
     return cycle_markers
 
