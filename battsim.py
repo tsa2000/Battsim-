@@ -1110,25 +1110,25 @@ def main():
         if 'pdf_bytes' in st.session_state:
             del st.session_state['pdf_bytes']
 
-            st.session_state['sim_results'] = {
-                "asset_data": asset_data,
-                "results": results,
-                "metrics": metrics,
-                "cycle_df": cycle_df,
-                "fig": fig if 'fig' in locals() else None,
-                "enable_dual": enable_dual,
-                "settings": {
-                    "Cycles": cycles, "Discharge C-rate": c_rate,
-                    "Voltage Noise σ [V]": noise_v, "Temp Noise σ [K]": noise_t, "Current Noise σ [A]": noise_i,
-                    "R0 [Ω]": R0, "R1 [Ω]": R1, "C1 [F]": C1, "R2 [Ω]": R2, "C2 [F]": C2,
-                    "R_th [K/W]": R_th, "C_th [J/K]": C_th, "T_ambient [K]": T_amb,
-                    "P0_diag": [float(f"{x:.6e}") for x in P0_vals],
-                    "Q_diag": [float(f"{x:.6e}") for x in Q_vals],
-                    "R_diag": [float(f"{x:.6e}") for x in R_vals],
-                    "Q_w_dual": q_w_val
-                }
+        st.session_state['sim_results'] = {
+            "asset_data": asset_data,
+            "results": results,
+            "metrics": metrics,
+            "cycle_df": cycle_df,
+            "fig": fig if 'fig' in locals() else None,
+            "enable_dual": enable_dual,
+            "settings": {
+                "Cycles": cycles, "Discharge C-rate": c_rate,
+                "Voltage Noise σ [V]": noise_v, "Temp Noise σ [K]": noise_t, "Current Noise σ [A]": noise_i,
+                "R0 [Ω]": R0, "R1 [Ω]": R1, "C1 [F]": C1, "R2 [Ω]": R2, "C2 [F]": C2,
+                "R_th [K/W]": R_th, "C_th [J/K]": C_th, "T_ambient [K]": T_amb,
+                "P0_diag": [float(f"{x:.6e}") for x in P0_vals],
+                "Q_diag": [float(f"{x:.6e}") for x in Q_vals],
+                "R_diag": [float(f"{x:.6e}") for x in R_vals],
+                "Q_w_dual": q_w_val
             }
-            st.rerun()
+        }
+        st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════
 # DISPLAY BLOCK (Executive Summary + Independent UQ Plots per Tab)
