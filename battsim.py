@@ -992,7 +992,10 @@ def main():
             stat.success("✅ Machine 1 & 2 Synchronization Complete!")
             
             st.plotly_chart(fig, use_container_width=True)
-    
+            
+            st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
+            st.dataframe(cycle_df, use_container_width=True)
+
             st.subheader("📈 Performance Metrics (Steady-State)")
     
             filter_names = ["aekf", "ukf"]
