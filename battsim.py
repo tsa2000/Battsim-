@@ -967,8 +967,6 @@ UQ Metrics: RMSE_SOC, RMSE_Volt, PICP, MPIW, NIS
         )
 
         cycle_df = analyze_cycles(asset_data, results, ecm_ref, enable_dual=enable_dual)
-        st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
-        st.dataframe(cycle_df, use_container_width=True)
         
         stat.text("🎨 Rendering…")
         bar.progress(92)
