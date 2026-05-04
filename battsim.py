@@ -993,11 +993,6 @@ def main():
             
             st.subheader("📈 Performance Metrics (Steady-State)")
             
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
-            st.dataframe(cycle_df, use_container_width=True)
-    
             filter_names = ["aekf", "ukf"]
             if enable_pf   and "pf"   in metrics: filter_names.append("pf")
             if enable_dual and "dual" in metrics: filter_names.append("dual")
@@ -1049,7 +1044,14 @@ def main():
                         xaxis_title="Time [s]", yaxis_title="R₀ [mΩ]",
                         title="Online R₀ Estimation — Dual EKF"
                     )
-                    st.plotly_chart(fig_r0, use_container_width=True)
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+                st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
+                st.dataframe(cycle_df, use_container_width=True)
+        
+                    
+                st.plotly_chart(fig_r0, use_container_width=True)
     
             st.info(
                 "**Notes:** "
