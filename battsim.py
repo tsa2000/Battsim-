@@ -989,17 +989,17 @@ def main():
             )
             
             bar.progress(100)
-                stat.success("✅ Machine 1 & 2 Synchronization Complete!")
+            stat.success("✅ Machine 1 & 2 Synchronization Complete!")
             
-                st.session_state['sim_results'] = {
-                    "asset_data": asset_data,
-                    "results": results,
-                    "metrics": metrics,
-                    "cycle_df": cycle_df,
-                    "fig": fig,
-                    "enable_dual": enable_dual,
-                }
-                st.rerun()
+            st.session_state['sim_results'] = {
+                "asset_data": asset_data,
+                "results": results,
+                "metrics": metrics,
+                "cycle_df": cycle_df,
+                "fig": fig,
+                "enable_dual": enable_dual,
+            }
+            st.rerun()
 # ══════════════════════════════════════════════════════════════════════════
 # DISPLAY BLOCK (Independent UQ Plots per Tab)
 # ══════════════════════════════════════════════════════════════════════════
