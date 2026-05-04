@@ -529,13 +529,13 @@ def run_digital_twin_system(asset_data, ecm_params, filter_params,
                             n_particles=filter_params.get("n_particles", 500))
 
     if enable_dual:
-    w0   = [ecm_params["R0"]]
-    P_w0 = [1e-4]
-    Q_w  = filter_params.get("Q_w", [1e-12])
-    R_w  = R
-    dual_ekf = DualEKF(
-        _make_ecm(), x0, P0, w0, P_w0, Q, R, Q_w, R_w
-    )
+        w0   = [ecm_params["R0"]]
+        P_w0 = [1e-4]
+        Q_w  = filter_params.get("Q_w", [1e-12])
+        R_w  = R
+        dual_ekf = DualEKF(
+            _make_ecm(), x0, P0, w0, P_w0, Q, R, Q_w, R_w
+        )
 
     def _empty():
         return {"soc": [], "v1": [], "v2": [], "sigma": [],
