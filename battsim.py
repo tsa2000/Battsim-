@@ -866,17 +866,24 @@ def create_comprehensive_plots(time, asset_data, results, enable_pf=True, enable
     return fig
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# P# ═══════════════════════════════════════════════════════════════════════════════
-# 📄 PROFESSIONAL PDF GENERATOR (SMART LAYOUT & UQ ANALYSIS)
+# 📄 PROFESSIONAL PDF GENERATOR (STRICT LAYOUT: 2 PLOTS/PAGE + TABS + SETTINGS)
 # ═══════════════════════════════════════════════════════════════════════════════
+import tempfile
+import os
+from fpdf import FPDF
+import plotly.io as pio
+import plotly.graph_objects as go
+import numpy as np
+
+
 class DigitalTwinPDF(FPDF):
     def header(self):
         self.set_font("helvetica", "B", 15)
         self.set_text_color(46, 134, 171)
-        self.cell(0, 10, "NMC622 Battery Digital Twin - Advanced UQ Report", border=False, ln=True, align="C")
+        self.cell(0, 10, "NMC622 Battery Digital Twin - Complete UQ Report", border=False, ln=True, align="C")
         self.set_draw_color(200, 200, 200)
         self.line(10, 22, 200, 22)
-        self.ln(10)
+        self.ln(5)
 
     def footer(self):
         self.set_y(-15)
@@ -893,6 +900,7 @@ def generate_pdf_report(res):
     results     = res["results"]
     time        = res["asset_data"]["time"]
     soc_true    = res["asset_data"]["soc_true"]
+    t_true      = res["asset_data"]["temp_true"]
     enable_dual = res["enable_dual"]
     settings    = res.get("settings", {})
 
@@ -906,7 +914,7 @@ def generate_pdf_report(res):
             .replace('₀', '0')
         )
 
-    # ── Utility: draw a two-column settings table ────────────────────────
+    # ── Utility: draw a labeled two-column key/value settings table ──────
     def draw_settings_table(title, data_dict):
         pdf.set_font("helvetica", "B", 9)
         pdf.set_fill_color(220, 230, 240)
@@ -916,37 +924,56 @@ def generate_pdf_report(res):
         for k, v in data_dict.items():
             pdf.cell(95, 6, safe_txt(k), border=1)
             pdf.cell(95, 6, safe_txt(v), border=1, ln=True)
-        pdf.ln(4)
-
-    # ── Utility: insert a Plotly figure with page-break protection ───────
-    def add_plot_to_pdf(fig, title):
-        if pdf.get_y() > 170:
-            pdf.add_page()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-            pio.write_image(fig, tmp.name, format="png", width=1000, height=500, scale=2)
-            pdf.set_font("helvetica", "B", 11)
-            pdf.cell(0, 10, safe_txt(title), ln=True)
-            pdf.image(tmp.name, x=15, w=180)
-            pdf.ln(95)
-            os.remove(tmp.name)
+        pdf.ln(3)
 
     # ── Shared Plotly layout ─────────────────────────────────────────────
     layout_style = dict(
         template="plotly_white",
         margin=dict(t=30, b=10, l=10, r=10),
-        height=500,
+        height=450,
     )
 
-    # ════════════════════════════════════════════════════════════════════
+    # ── Utility: render a figure into the PDF (strictly 2 plots/page) ───
+    plots_on_page = 0
+
+    def render_plot(fig, plot_title, tab_title=None):
+        nonlocal plots_on_page
+
+        # Open a new page on tab change or when the current page is full
+        if tab_title or plots_on_page == 2:
+            if pdf.page_no() > 1 or plots_on_page > 0:
+                pdf.add_page()
+            plots_on_page = 0
+
+            if tab_title:
+                pdf.set_font("helvetica", "B", 14)
+                pdf.set_text_color(16, 78, 139)
+                pdf.cell(0, 10, safe_txt(tab_title), ln=True)
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(2)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+            pio.write_image(fig, tmp.name, format="png", width=1000, height=450, scale=2)
+            pdf.set_font("helvetica", "B", 10)
+            pdf.cell(0, 8, safe_txt(plot_title), ln=True)
+            pdf.image(tmp.name, x=15, y=pdf.get_y(), w=180)
+            pdf.ln(90)
+            os.remove(tmp.name)
+
+        plots_on_page += 1
+
+    # =========================================================================
     # Section 1 – Executive Performance Summary
-    # ════════════════════════════════════════════════════════════════════
+    # =========================================================================
     pdf.add_page()
     pdf.set_font("helvetica", "B", 12)
     pdf.set_text_color(0, 0, 0)
-    pdf.cell(0, 10, "1. Executive Performance Summary (Steady-State)", ln=True)
+    pdf.cell(0, 10, "1. Executive Performance Metrics", ln=True)
 
     col_w, line_h = 45, 8
     headers = ["Filter", "SOC RMSE (%)", "Voltage RMSE (mV)", "PICP (%)"]
+    filter_labels  = {"aekf": "AEKF", "ukf": "UKF", "dual": "Dual EKF"}
+    active_filters = ["aekf", "ukf"] + (["dual"] if enable_dual else [])
 
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("helvetica", "B", 10)
@@ -954,144 +981,163 @@ def generate_pdf_report(res):
         pdf.cell(col_w, line_h, safe_txt(head), border=1, fill=True, ln=(head == "PICP (%)"))
 
     pdf.set_font("helvetica", "", 10)
-    filter_labels = {"aekf": "AEKF", "ukf": "UKF", "dual": "Dual EKF"}
-    active_filters = ["aekf", "ukf"] + (["dual"] if enable_dual else [])
-
     for name in active_filters:
         m = metrics[name]
-        pdf.cell(col_w, line_h, filter_labels[name],              border=1)
-        pdf.cell(col_w, line_h, safe_txt(f"{m['rmse_soc']:.4f}"), border=1)
-        pdf.cell(col_w, line_h, safe_txt(f"{m['rmse_volt']:.2f}"),border=1)
-        pdf.cell(col_w, line_h, safe_txt(f"{m['picp']:.1f}"),     border=1, ln=True)
+        pdf.cell(col_w, line_h, filter_labels[name],               border=1)
+        pdf.cell(col_w, line_h, safe_txt(f"{m['rmse_soc']:.4f}"),  border=1)
+        pdf.cell(col_w, line_h, safe_txt(f"{m['rmse_volt']:.2f}"), border=1)
+        pdf.cell(col_w, line_h, safe_txt(f"{m['picp']:.1f}"),      border=1, ln=True)
 
     pdf.ln(5)
 
-    # ════════════════════════════════════════════════════════════════════
-    # Section 2 – System Configuration & Filter Tuning
-    # ════════════════════════════════════════════════════════════════════
+    # =========================================================================
+    # Section 2 – System Configuration, Tuning & Inputs
+    # =========================================================================
     pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 10, "2. System Configuration & Filter Tuning", ln=True)
+    pdf.cell(0, 10, "2. System Configuration, Tuning & Inputs", ln=True)
 
     if settings:
         draw_settings_table("Operating Conditions & Sensor Noise", {
-            "Cycles":                settings["Cycles"],
-            "Discharge C-rate":      settings["Discharge C-rate"],
-            "Voltage Noise (sigma)": f"{settings['Voltage Noise σ [V]']} V",
-            "Temp Noise (sigma)":    f"{settings['Temp Noise σ [K]']} K",
+            "Total Cycles":           settings["Cycles"],
+            "Discharge C-rate":       settings["Discharge C-rate"],
+            "Voltage Noise (sigma)":  f"{settings['Voltage Noise σ [V]']} V",
+            "Temp Noise (sigma)":     f"{settings['Temp Noise σ [K]']} K",
+            "Current Noise (sigma)":  f"{settings['Current Noise σ [A]']} A",
         })
-        draw_settings_table("Equivalent Circuit Model (ECM)", {
-            "R0, R1, R2 [Ohm]": f"{settings['R0 [Ω]']}, {settings['R1 [Ω]']}, {settings['R2 [Ω]']}",
-            "C1, C2 [F]":       f"{settings['C1 [F]']}, {settings['C2 [F]']}",
+        draw_settings_table("Equivalent Circuit Model (ECM) Parameters", {
+            "Resistors (R0, R1, R2) [Ohm]":     f"{settings['R0 [Ω]']}, {settings['R1 [Ω]']}, {settings['R2 [Ω]']}",
+            "Capacitors (C1, C2) [F]":           f"{settings['C1 [F]']}, {settings['C2 [F]']}",
+            "Thermal (R_th, C_th, T_amb)":       f"{settings['R_th [K/W]']} K/W, {settings['C_th [J/K]']} J/K, {settings['T_ambient [K]']} K",
         })
-        draw_settings_table("Filter Tuning Matrices (Diagonals)", {
-            "P0 [SOC, V1, V2, T]": str(settings["P0_diag"]),
-            "Q Process Noise":     str(settings["Q_diag"]),
-            "R Meas. Noise":       str(settings["R_diag"]),
+        draw_settings_table("Kalman Filters Tuning Matrices", {
+            "P0 (Initial Covariance)":            str(settings["P0_diag"]),
+            "Q (Process Noise Diagonal)":         str(settings["Q_diag"]),
+            "R (Measurement Noise Diagonal)":     str(settings["R_diag"]),
+            "Dual EKF R0 Process Noise (Q_w)":   str(settings["Q_w_dual"]),
         })
 
-    # ════════════════════════════════════════════════════════════════════
-    # Section 3 – Filter Performance & Uncertainty Analysis
-    # ════════════════════════════════════════════════════════════════════
-    pdf.add_page()
-    pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 10, "3. Filter Performance & Uncertainty Analysis", ln=True)
+    # =========================================================================
+    # TAB 1 – AEKF Analysis
+    # =========================================================================
 
-    # 3.1 – Comparative absolute error
-    fig_comp = go.Figure()
-    fig_comp.add_trace(go.Scatter(
-        x=time, y=abs(results["aekf"]["soc"] - soc_true) * 100,
-        name="AEKF Error", line=dict(color="#A23B72"),
-    ))
-    fig_comp.add_trace(go.Scatter(
-        x=time, y=abs(results["ukf"]["soc"] - soc_true) * 100,
-        name="UKF Error", line=dict(color="#F18F01"),
-    ))
-    if enable_dual:
-        fig_comp.add_trace(go.Scatter(
-            x=time, y=abs(results["dual"]["soc"] - soc_true) * 100,
-            name="Dual Error", line=dict(color="#2E86AB"),
-        ))
-    fig_comp.update_layout(
-        title="Absolute Estimation Error Comparison [%]",
-        yaxis_title="Error [%]", **layout_style,
-    )
-    add_plot_to_pdf(fig_comp, "3.1 Comparative Absolute Error")
+    # 1.1 – SOC tracking
+    f1 = go.Figure()
+    f1.add_trace(go.Scatter(x=time, y=soc_true,              name="Truth",    line=dict(color="black",   dash="dash")))
+    f1.add_trace(go.Scatter(x=time, y=results["aekf"]["soc"], name="AEKF SOC", line=dict(color="#A23B72")))
+    f1.update_layout(title="SOC Tracking Accuracy", **layout_style)
+    render_plot(f1, "1.1 AEKF State of Charge Tracking", "TAB 1: AEKF Analysis")
 
-    # 3.2 – AEKF uncertainty quantification
-    fig_aekf = go.Figure()
-    fig_aekf.add_trace(go.Scatter(
-        x=time, y=(results["aekf"]["soc"] - soc_true) * 100,
-        name="Error (%)", line=dict(color="#A23B72"),
-    ))
-    fig_aekf.add_trace(go.Scatter(
-        x=time, y= 2 * results["aekf"]["sigma"] * 100,
-        name="+2sigma", line=dict(color="gray", dash="dot"),
-    ))
-    fig_aekf.add_trace(go.Scatter(
-        x=time, y=-2 * results["aekf"]["sigma"] * 100,
-        name="-2sigma", line=dict(color="gray", dash="dot"),
-        fill='tonexty', fillcolor="rgba(128,128,128,0.15)",
-    ))
-    fig_aekf.update_layout(
-        title="AEKF Estimation Error vs Uncertainty Bounds",
-        yaxis_title="Error [%]", **layout_style,
-    )
-    add_plot_to_pdf(fig_aekf, "3.2 AEKF Uncertainty Quantification")
+    # 1.2 – Estimation error & confidence bounds
+    f2 = go.Figure()
+    f2.add_trace(go.Scatter(x=time, y=(results["aekf"]["soc"] - soc_true) * 100,
+                            name="Error (%)", line=dict(color="#A23B72")))
+    f2.add_trace(go.Scatter(x=time, y= 2 * results["aekf"]["sigma"] * 100,
+                            name="+2sigma", line=dict(color="gray", dash="dot")))
+    f2.add_trace(go.Scatter(x=time, y=-2 * results["aekf"]["sigma"] * 100,
+                            name="-2sigma", line=dict(color="gray", dash="dot"),
+                            fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
+    f2.update_layout(title="Estimation Error vs Uncertainty", yaxis_title="Error [%]", **layout_style)
+    render_plot(f2, "1.2 AEKF Estimation Error & 95% Confidence Bounds")
 
-    # 3.3 – UKF uncertainty quantification
-    fig_ukf = go.Figure()
-    fig_ukf.add_trace(go.Scatter(
-        x=time, y=(results["ukf"]["soc"] - soc_true) * 100,
-        name="Error (%)", line=dict(color="#F18F01"),
-    ))
-    fig_ukf.add_trace(go.Scatter(
-        x=time, y= 2 * results["ukf"]["sigma"] * 100,
-        name="+2sigma", line=dict(color="gray", dash="dot"),
-    ))
-    fig_ukf.add_trace(go.Scatter(
-        x=time, y=-2 * results["ukf"]["sigma"] * 100,
-        name="-2sigma", line=dict(color="gray", dash="dot"),
-        fill='tonexty', fillcolor="rgba(128,128,128,0.15)",
-    ))
-    fig_ukf.update_layout(
-        title="UKF Estimation Error vs Uncertainty Bounds",
-        yaxis_title="Error [%]", **layout_style,
-    )
-    add_plot_to_pdf(fig_ukf, "3.3 UKF Uncertainty Quantification")
+    # =========================================================================
+    # TAB 2 – UKF Analysis
+    # =========================================================================
 
-    # 3.4 – Dual EKF internal resistance tracking (optional)
+    # 2.1 – SOC tracking
+    f3 = go.Figure()
+    f3.add_trace(go.Scatter(x=time, y=soc_true,               name="Truth",   line=dict(color="black",   dash="dash")))
+    f3.add_trace(go.Scatter(x=time, y=results["ukf"]["soc"],  name="UKF SOC", line=dict(color="#F18F01")))
+    f3.update_layout(title="SOC Tracking Accuracy", **layout_style)
+    render_plot(f3, "2.1 UKF State of Charge Tracking", "TAB 2: UKF Analysis")
+
+    # 2.2 – Estimation error & confidence bounds
+    f4 = go.Figure()
+    f4.add_trace(go.Scatter(x=time, y=(results["ukf"]["soc"] - soc_true) * 100,
+                            name="Error (%)", line=dict(color="#F18F01")))
+    f4.add_trace(go.Scatter(x=time, y= 2 * results["ukf"]["sigma"] * 100,
+                            name="+2sigma", line=dict(color="gray", dash="dot")))
+    f4.add_trace(go.Scatter(x=time, y=-2 * results["ukf"]["sigma"] * 100,
+                            name="-2sigma", line=dict(color="gray", dash="dot"),
+                            fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
+    f4.update_layout(title="Estimation Error vs Uncertainty", yaxis_title="Error [%]", **layout_style)
+    render_plot(f4, "2.2 UKF Estimation Error & 95% Confidence Bounds")
+
+    # 2.3 – Thermal tracking
+    f5 = go.Figure()
+    f5.add_trace(go.Scatter(x=time, y=t_true,                  name="Truth",    line=dict(color="black",   dash="dash")))
+    f5.add_trace(go.Scatter(x=time, y=results["ukf"]["temp"],  name="Est Temp", line=dict(color="#F18F01")))
+    f5.update_layout(title="Core Temperature Tracking [K]", **layout_style)
+    render_plot(f5, "2.3 UKF Thermal Tracking Accuracy")
+
+    # =========================================================================
+    # TAB 3 – Dual EKF Analysis (optional)
+    # =========================================================================
     if enable_dual:
         r0_est   = results["dual"]["R0_est"]   * 1000
         sigma_r0 = results["dual"]["sigma_R0"] * 1000
-        fig_dual = go.Figure()
-        fig_dual.add_trace(go.Scatter(
-            x=time, y=r0_est,
-            name="R0 Est.", line=dict(color="#2E86AB"),
-        ))
-        fig_dual.add_trace(go.Scatter(
-            x=time, y=r0_est + 2 * sigma_r0,
-            name="+2sigma", line=dict(color="gray", dash="dot"),
-        ))
-        fig_dual.add_trace(go.Scatter(
-            x=time, y=r0_est - 2 * sigma_r0,
-            name="-2sigma", line=dict(color="gray", dash="dot"),
-            fill='tonexty', fillcolor="rgba(128,128,128,0.15)",
-        ))
-        fig_dual.update_layout(
-            title="Dual EKF: Online R0 Tracking [mOhm]",
-            yaxis_title="Resistance [mOhm]", **layout_style,
-        )
-        add_plot_to_pdf(fig_dual, "3.4 Dual EKF Internal Resistance Tracking")
 
-    # ════════════════════════════════════════════════════════════════════
-    # Section 4 – Cycle-by-Cycle Detailed Metrics
-    # ════════════════════════════════════════════════════════════════════
+        # 3.1 – Online R0 tracking
+        f6 = go.Figure()
+        f6.add_trace(go.Scatter(x=time, y=r0_est,                name="R0 Est.", line=dict(color="#2E86AB")))
+        f6.add_trace(go.Scatter(x=time, y=r0_est + 2 * sigma_r0, name="+2sigma", line=dict(color="gray", dash="dot")))
+        f6.add_trace(go.Scatter(x=time, y=r0_est - 2 * sigma_r0, name="-2sigma", line=dict(color="gray", dash="dot"),
+                                fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
+        f6.update_layout(title="Online R0 Tracking [mOhm]", yaxis_title="Resistance [mOhm]", **layout_style)
+        render_plot(f6, "3.1 Dual EKF Internal Resistance Tracking", "TAB 3: Dual EKF Analysis")
+
+        # 3.2 – Estimation error & confidence bounds
+        f7 = go.Figure()
+        f7.add_trace(go.Scatter(x=time, y=(results["dual"]["soc"] - soc_true) * 100,
+                                name="Error (%)", line=dict(color="#2E86AB")))
+        f7.add_trace(go.Scatter(x=time, y= 2 * results["dual"]["sigma"] * 100,
+                                name="+2sigma", line=dict(color="gray", dash="dot")))
+        f7.add_trace(go.Scatter(x=time, y=-2 * results["dual"]["sigma"] * 100,
+                                name="-2sigma", line=dict(color="gray", dash="dot"),
+                                fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
+        f7.update_layout(title="Estimation Error vs Uncertainty", yaxis_title="Error [%]", **layout_style)
+        render_plot(f7, "3.2 Dual EKF Estimation Error & 95% Confidence Bounds")
+
+        # 3.3 – Thermal tracking
+        f8 = go.Figure()
+        f8.add_trace(go.Scatter(x=time, y=t_true,                   name="Truth",     line=dict(color="black",   dash="dash")))
+        f8.add_trace(go.Scatter(x=time, y=results["dual"]["temp"],  name="Dual Temp", line=dict(color="#2E86AB")))
+        f8.update_layout(title="Core Temperature Tracking [K]", **layout_style)
+        render_plot(f8, "3.3 Dual EKF Thermal Tracking Accuracy")
+
+    # =========================================================================
+    # TAB 4 – Comparative Benchmark
+    # =========================================================================
+
+    # 4.1 – Multi-filter absolute error
+    f9 = go.Figure()
+    f9.add_trace(go.Scatter(x=time, y=abs(results["aekf"]["soc"] - soc_true) * 100, name="AEKF", line=dict(color="#A23B72")))
+    f9.add_trace(go.Scatter(x=time, y=abs(results["ukf"]["soc"]  - soc_true) * 100, name="UKF",  line=dict(color="#F18F01")))
+    if enable_dual:
+        f9.add_trace(go.Scatter(x=time, y=abs(results["dual"]["soc"] - soc_true) * 100, name="Dual", line=dict(color="#2E86AB")))
+    f9.update_layout(title="Absolute Error Comparison [%]", yaxis_title="Absolute Error [%]", **layout_style)
+    render_plot(f9, "4.1 Multi-Filter Absolute Error Benchmark", "TAB 4: Comparative Benchmark")
+
+    # 4.2 – Multi-filter uncertainty evolution
+    f10 = go.Figure()
+    f10.add_trace(go.Scatter(x=time, y=results["aekf"]["sigma"] * 100, name="AEKF sigma", line=dict(color="#A23B72")))
+    f10.add_trace(go.Scatter(x=time, y=results["ukf"]["sigma"]  * 100, name="UKF sigma",  line=dict(color="#F18F01")))
+    if enable_dual:
+        f10.add_trace(go.Scatter(x=time, y=results["dual"]["sigma"] * 100, name="Dual sigma", line=dict(color="#2E86AB")))
+    f10.update_layout(title="Uncertainty (Sigma) Evolution [%]", yaxis_title="Sigma [%]", **layout_style)
+    render_plot(f10, "4.2 Multi-Filter Uncertainty Evolution (Sigma)")
+
+    # =========================================================================
+    # Final Page – Cycle-by-Cycle Detailed Metrics Table
+    # =========================================================================
     pdf.add_page()
-    pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 10, "4. Cycle-by-Cycle Detailed Metrics", ln=True)
+    pdf.set_font("helvetica", "B", 14)
+    pdf.set_text_color(16, 78, 139)
+    pdf.cell(0, 10, "Final Analysis: Cycle-by-Cycle Metrics", ln=True)
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(5)
 
-    df        = res["cycle_df"]
-    col_w_s   = 190 / len(df.columns)
+    df      = res["cycle_df"]
+    col_w_s = 190 / len(df.columns)
 
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("helvetica", "B", 7)
@@ -1106,6 +1152,7 @@ def generate_pdf_report(res):
         pdf.ln()
 
     return bytes(pdf.output())
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
