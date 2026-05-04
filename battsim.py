@@ -872,189 +872,189 @@ def main():
         "Comprehensive thermal model with entropic heating"
     )
 
-with st.expander("📐 System Architecture", expanded=False):
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.info('''
-        ### 🔋 Machine 1: Physical Asset
-        * **Base Model:** PyBaMM DFN (Chen2020)
-        * **Cell Chemistry:** NMC622 / Graphite
-        * **Thermodynamics:** Lumped Thermal Model
-        * **Heat Sources:** Ohmic + Polarization + Entropic
-        * **Sensors:** V/I/T measurement noise added
-        ''')
-
-    with col2:
-        st.success('''
-        ### 🧠 Machine 2: Digital Twin
-        * **Equivalent Circuit Model:** 2-RC ECM
-        * **Estimation Filters:** AEKF | UKF | Dual EKF
-        * **Adaptive Features:** Online R₀ parameter estimation
-        * **UQ Metrics:** RMSE, MAE, PICP, MPIW, NIS
-        ''')
-
-
-    with st.sidebar:
-        st.header("⚙️ Configuration")
-
-        with st.expander("🔋 Physical Asset", expanded=True):
-            cycles  = st.number_input("Cycles", 1, 20, 3)
-            c_rate  = st.slider("Discharge C-rate", 0.5, 2.0, 1.0, 0.1)
-            noise_v = st.number_input("Voltage noise σ [V]", 0.0001, 0.05, 0.005, format="%.4f")
-            noise_t = st.number_input("Temperature noise σ [K]", 0.001, 5.0, 0.2, format="%.3f")
-            noise_i = st.number_input("Current noise σ [A]", 0.0001, 1.0, 0.02, format="%.4f")
-
-        with st.expander("⚡ ECM Parameters", expanded=True):
-            R0  = st.number_input("R₀ [Ω]",   0.001, 0.1, 0.015, 0.001, format="%.3f")
-            R1  = st.number_input("R₁ [Ω]",   0.001, 0.1, 0.010, 0.001, format="%.3f")
-            C1  = st.number_input("C₁ [F]",   10.0, 1e5, 2000.0, 100.0, format="%.1f")
-            R2  = st.number_input("R₂ [Ω]",   0.001, 0.1, 0.005, 0.001, format="%.3f")
-            C2  = st.number_input("C₂ [F]",   10.0, 1e5, 5000.0, 100.0, format="%.1f")
-            R_th = st.number_input("R_th [K/W]", 0.1, 100.0, 15.0, 0.1, format="%.1f")
-            C_th = st.number_input("C_th [J/K]", 10.0, 5000.0, 500.0, 10.0, format="%.1f")
-            T_amb = st.number_input("T_ambient [K]", 250.0, 350.0, 298.15, 0.1, format="%.2f")
-
-        with st.expander("🧮 Filter Tuning", expanded=False):
-            P0_vals = [
-                st.number_input("P₀ SOC",  1e-6, 0.5,  0.01,  format="%.6f"),
-                st.number_input("P₀ V₁",   1e-8, 0.1,  1e-4,  format="%.6f"),
-                st.number_input("P₀ V₂",   1e-8, 0.1,  1e-4,  format="%.6f"),
-                st.number_input("P₀ T",    1e-6, 50.0, 1.0,   format="%.6f"),
-            ]
-            Q_vals = [
-                st.number_input("Q SOC",  1e-10, 1e-2, 1e-6,  format="%.2e"),
-                st.number_input("Q V₁",   1e-10, 1e-2, 1e-5,  format="%.2e"),
-                st.number_input("Q V₂",   1e-10, 1e-2, 1e-5,  format="%.2e"),
-                st.number_input("Q T",    1e-10, 1e-1, 1e-4,  format="%.2e"),
-            ]
-            R_vals = [
-                st.number_input("R Voltage", 1e-10, 1e-1, noise_v**2, format="%.2e"),
-                st.number_input("R Temp",    1e-10, 10.0, noise_t**2, format="%.2e"),
-            ]
-            q_w_val = st.number_input("Q_w (R₀ Process Noise)", 1e-15, 1e-6, 1e-12, format="%.2e")
-
-        with st.expander("🔧 Options", expanded=True):
-           # enable_pf   = st.checkbox("Enable Particle Filter",  value=True)
-            #n_particles = st.slider("PF particles", 100, 2000, 500, 50)
-            enable_pf   = False
-            n_particles  = 500
-            enable_dual = st.checkbox("Enable Dual EKF (R₀ tracking)", value=True)
-
-        run_btn = st.button("🚀 Run Digital Twin", use_container_width=True)
+    with st.expander("📐 System Architecture", expanded=False):
+        col1, col2 = st.columns(2)
+    
+        with col1:
+            st.info('''
+            ### 🔋 Machine 1: Physical Asset
+            * **Base Model:** PyBaMM DFN (Chen2020)
+            * **Cell Chemistry:** NMC622 / Graphite
+            * **Thermodynamics:** Lumped Thermal Model
+            * **Heat Sources:** Ohmic + Polarization + Entropic
+            * **Sensors:** V/I/T measurement noise added
+            ''')
+    
+        with col2:
+            st.success('''
+            ### 🧠 Machine 2: Digital Twin
+            * **Equivalent Circuit Model:** 2-RC ECM
+            * **Estimation Filters:** AEKF | UKF | Dual EKF
+            * **Adaptive Features:** Online R₀ parameter estimation
+            * **UQ Metrics:** RMSE, MAE, PICP, MPIW, NIS
+            ''')
+    
+    
+        with st.sidebar:
+            st.header("⚙️ Configuration")
+    
+            with st.expander("🔋 Physical Asset", expanded=True):
+                cycles  = st.number_input("Cycles", 1, 20, 3)
+                c_rate  = st.slider("Discharge C-rate", 0.5, 2.0, 1.0, 0.1)
+                noise_v = st.number_input("Voltage noise σ [V]", 0.0001, 0.05, 0.005, format="%.4f")
+                noise_t = st.number_input("Temperature noise σ [K]", 0.001, 5.0, 0.2, format="%.3f")
+                noise_i = st.number_input("Current noise σ [A]", 0.0001, 1.0, 0.02, format="%.4f")
+    
+            with st.expander("⚡ ECM Parameters", expanded=True):
+                R0  = st.number_input("R₀ [Ω]",   0.001, 0.1, 0.015, 0.001, format="%.3f")
+                R1  = st.number_input("R₁ [Ω]",   0.001, 0.1, 0.010, 0.001, format="%.3f")
+                C1  = st.number_input("C₁ [F]",   10.0, 1e5, 2000.0, 100.0, format="%.1f")
+                R2  = st.number_input("R₂ [Ω]",   0.001, 0.1, 0.005, 0.001, format="%.3f")
+                C2  = st.number_input("C₂ [F]",   10.0, 1e5, 5000.0, 100.0, format="%.1f")
+                R_th = st.number_input("R_th [K/W]", 0.1, 100.0, 15.0, 0.1, format="%.1f")
+                C_th = st.number_input("C_th [J/K]", 10.0, 5000.0, 500.0, 10.0, format="%.1f")
+                T_amb = st.number_input("T_ambient [K]", 250.0, 350.0, 298.15, 0.1, format="%.2f")
+    
+            with st.expander("🧮 Filter Tuning", expanded=False):
+                P0_vals = [
+                    st.number_input("P₀ SOC",  1e-6, 0.5,  0.01,  format="%.6f"),
+                    st.number_input("P₀ V₁",   1e-8, 0.1,  1e-4,  format="%.6f"),
+                    st.number_input("P₀ V₂",   1e-8, 0.1,  1e-4,  format="%.6f"),
+                    st.number_input("P₀ T",    1e-6, 50.0, 1.0,   format="%.6f"),
+                ]
+                Q_vals = [
+                    st.number_input("Q SOC",  1e-10, 1e-2, 1e-6,  format="%.2e"),
+                    st.number_input("Q V₁",   1e-10, 1e-2, 1e-5,  format="%.2e"),
+                    st.number_input("Q V₂",   1e-10, 1e-2, 1e-5,  format="%.2e"),
+                    st.number_input("Q T",    1e-10, 1e-1, 1e-4,  format="%.2e"),
+                ]
+                R_vals = [
+                    st.number_input("R Voltage", 1e-10, 1e-1, noise_v**2, format="%.2e"),
+                    st.number_input("R Temp",    1e-10, 10.0, noise_t**2, format="%.2e"),
+                ]
+                q_w_val = st.number_input("Q_w (R₀ Process Noise)", 1e-15, 1e-6, 1e-12, format="%.2e")
+    
+            with st.expander("🔧 Options", expanded=True):
+               # enable_pf   = st.checkbox("Enable Particle Filter",  value=True)
+                #n_particles = st.slider("PF particles", 100, 2000, 500, 50)
+                enable_pf   = False
+                n_particles  = 500
+                enable_dual = st.checkbox("Enable Dual EKF (R₀ tracking)", value=True)
+    
+            run_btn = st.button("🚀 Run Digital Twin", use_container_width=True)
+            
+    if run_btn:
+            bar = st.progress(0)
+            stat = st.empty()
         
-if run_btn:
-        bar = st.progress(0)
-        stat = st.empty()
-    
-        # 🔋 Machine 1: Physical Asset Simulation
-        stat.text("🔋 Machine 1: Simulating Physical Asset (PyBaMM DFN)...")
-        bar.progress(10)
-        asset_data = PhysicalAsset(BatteryConfig()).simulate(
-            cycles, c_rate, noise_v, noise_t, noise_i
-        )
-    
-        ecm_params = dict(
-            R0=R0, R1=R1, C1=C1, R2=R2, C2=C2,
-            R_th=R_th, C_th=C_th, T_amb=T_amb,
-        )
-        filter_params = dict(
-            P0=P0_vals, Q=Q_vals, R=R_vals, n_particles=n_particles, Q_w=[q_w_val]
-        )
-    
-        # 🧠 Machine 2: Digital Twin & Filtering
-        stat.text("🧠 Machine 2: Running Digital Twin Estimation Filters...")
-        bar.progress(40)
-        results, ecm_ref, dual_ekf = run_digital_twin_system(
-            asset_data, ecm_params, filter_params,
-            enable_pf=enable_pf, enable_dual=enable_dual,
-        )
-    
-        # 📊 Machine 2: Metrics & Cycle Analysis
-        stat.text("📊 Machine 2: Computing Metrics & Cycle-by-Cycle Analysis...")
-        bar.progress(75)
-        metrics, cutoff = compute_metrics(
-            asset_data, results, ecm_ref,
-            enable_pf=enable_pf, enable_dual=enable_dual,
-        )
-    
-        cycle_df = analyze_cycles(asset_data, results, ecm_ref, enable_dual=enable_dual)
-    
-        # 🎨 Machine 2: Visualization Rendering
-        stat.text("🎨 Machine 2: Rendering Digital Twin Visualizations...")
-        bar.progress(92)
-        fig = create_comprehensive_plots(
-            asset_data["time"], asset_data, results,
-            enable_pf=enable_pf, enable_dual=enable_dual,
-        )
-    
-        bar.progress(100)
-        stat.success("✅ Machine 1 & 2 Synchronization Complete!")
+            # 🔋 Machine 1: Physical Asset Simulation
+            stat.text("🔋 Machine 1: Simulating Physical Asset (PyBaMM DFN)...")
+            bar.progress(10)
+            asset_data = PhysicalAsset(BatteryConfig()).simulate(
+                cycles, c_rate, noise_v, noise_t, noise_i
+            )
         
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.subheader("📈 Performance Metrics (Steady-State)")
-
-        filter_names = ["aekf", "ukf"]
-        if enable_pf   and "pf"   in metrics: filter_names.append("pf")
-        if enable_dual and "dual" in metrics: filter_names.append("dual")
-
-        cols = st.columns(len(filter_names))
-        labels = {"aekf": "🎯 AEKF", "ukf": "🧠 UKF",
-                  "pf": "🌫️ PF", "dual": "⚡ Dual EKF"}
-
-        for col, name in zip(cols, filter_names):
-            m = metrics[name]
-            with col:
-                st.markdown(f"### {labels[name]}")
-                st.metric("SOC RMSE",     f"{m['rmse_soc']:.4f} %")
-                st.metric("Voltage RMSE", f"{m['rmse_volt']:.2f} mV")
-                st.metric("SOC MAE",      f"{m['mae_soc']:.4f} %")
-                st.metric("PICP",         f"{m['picp']:.1f} %")
-                st.metric("MPIW",         f"{m['mpiw']:.4f} %")
-                if "nis_within" in m:
-                    st.metric("NIS within χ²", f"{m['nis_within']:.1f} %")
-                if name == "dual" and "dual" in results:
-                    r0_arr = results["dual"]["R0_est"]
-                    st.metric("R₀ final estimate", f"{r0_arr[-1]*1000:.2f} mΩ")
-
-        if enable_dual and "dual" in results:
-            with st.expander("🔧 R₀ Tracking Details"):
-                r0 = results["dual"]["R0_est"]
-                sr = results["dual"]["sigma_R0"]
-                st.write(
-                    f"**Initial R₀:** {r0[0]*1000:.2f} mΩ  |  "
-                    f"**Final R₀:** {r0[-1]*1000:.2f} mΩ  |  "
-                    f"**Δ:** {(r0[-1]-r0[0])*1000:+.2f} mΩ"
-                )
-                fig_r0 = go.Figure()
-                fig_r0.add_trace(go.Scatter(
-                    x=asset_data["time"], y=r0*1000,
-                    name="R₀ Estimated [mΩ]", line=dict(color="#2E86AB", width=2)
-                ))
-                fig_r0.add_trace(go.Scatter(
-                    x=asset_data["time"], y=(r0+2*sr)*1000,
-                    mode="lines", line=dict(width=0), showlegend=False
-                ))
-                fig_r0.add_trace(go.Scatter(
-                    x=asset_data["time"], y=(r0-2*sr)*1000, fill="tonexty",
-                    fillcolor="rgba(46,134,171,0.15)",
-                    line=dict(width=0), name="95% CI"
-                ))
-                fig_r0.update_layout(
-                    template="plotly_white", height=300,
-                    xaxis_title="Time [s]", yaxis_title="R₀ [mΩ]",
-                    title="Online R₀ Estimation — Dual EKF"
-                )
-                st.plotly_chart(fig_r0, use_container_width=True)
-
-        st.info(
-            "**Notes:** "
-            "Voltage RMSE = ‖V_DFN − V_ECM_reconstructed‖, not innovation. "
-            "Entropic heating −I·T·(dU/dT) included in thermal model. "
-            "Dual EKF tracks R₀ via random-walk prior; Q_w controls adaptation speed."
-        )
+            ecm_params = dict(
+                R0=R0, R1=R1, C1=C1, R2=R2, C2=C2,
+                R_th=R_th, C_th=C_th, T_amb=T_amb,
+            )
+            filter_params = dict(
+                P0=P0_vals, Q=Q_vals, R=R_vals, n_particles=n_particles, Q_w=[q_w_val]
+            )
+        
+            # 🧠 Machine 2: Digital Twin & Filtering
+            stat.text("🧠 Machine 2: Running Digital Twin Estimation Filters...")
+            bar.progress(40)
+            results, ecm_ref, dual_ekf = run_digital_twin_system(
+                asset_data, ecm_params, filter_params,
+                enable_pf=enable_pf, enable_dual=enable_dual,
+            )
+        
+            # 📊 Machine 2: Metrics & Cycle Analysis
+            stat.text("📊 Machine 2: Computing Metrics & Cycle-by-Cycle Analysis...")
+            bar.progress(75)
+            metrics, cutoff = compute_metrics(
+                asset_data, results, ecm_ref,
+                enable_pf=enable_pf, enable_dual=enable_dual,
+            )
+        
+            cycle_df = analyze_cycles(asset_data, results, ecm_ref, enable_dual=enable_dual)
+        
+            # 🎨 Machine 2: Visualization Rendering
+            stat.text("🎨 Machine 2: Rendering Digital Twin Visualizations...")
+            bar.progress(92)
+            fig = create_comprehensive_plots(
+                asset_data["time"], asset_data, results,
+                enable_pf=enable_pf, enable_dual=enable_dual,
+            )
+        
+            bar.progress(100)
+            stat.success("✅ Machine 1 & 2 Synchronization Complete!")
+            
+            st.plotly_chart(fig, use_container_width=True)
     
+            st.subheader("📈 Performance Metrics (Steady-State)")
+    
+            filter_names = ["aekf", "ukf"]
+            if enable_pf   and "pf"   in metrics: filter_names.append("pf")
+            if enable_dual and "dual" in metrics: filter_names.append("dual")
+    
+            cols = st.columns(len(filter_names))
+            labels = {"aekf": "🎯 AEKF", "ukf": "🧠 UKF",
+                      "pf": "🌫️ PF", "dual": "⚡ Dual EKF"}
+    
+            for col, name in zip(cols, filter_names):
+                m = metrics[name]
+                with col:
+                    st.markdown(f"### {labels[name]}")
+                    st.metric("SOC RMSE",     f"{m['rmse_soc']:.4f} %")
+                    st.metric("Voltage RMSE", f"{m['rmse_volt']:.2f} mV")
+                    st.metric("SOC MAE",      f"{m['mae_soc']:.4f} %")
+                    st.metric("PICP",         f"{m['picp']:.1f} %")
+                    st.metric("MPIW",         f"{m['mpiw']:.4f} %")
+                    if "nis_within" in m:
+                        st.metric("NIS within χ²", f"{m['nis_within']:.1f} %")
+                    if name == "dual" and "dual" in results:
+                        r0_arr = results["dual"]["R0_est"]
+                        st.metric("R₀ final estimate", f"{r0_arr[-1]*1000:.2f} mΩ")
+    
+            if enable_dual and "dual" in results:
+                with st.expander("🔧 R₀ Tracking Details"):
+                    r0 = results["dual"]["R0_est"]
+                    sr = results["dual"]["sigma_R0"]
+                    st.write(
+                        f"**Initial R₀:** {r0[0]*1000:.2f} mΩ  |  "
+                        f"**Final R₀:** {r0[-1]*1000:.2f} mΩ  |  "
+                        f"**Δ:** {(r0[-1]-r0[0])*1000:+.2f} mΩ"
+                    )
+                    fig_r0 = go.Figure()
+                    fig_r0.add_trace(go.Scatter(
+                        x=asset_data["time"], y=r0*1000,
+                        name="R₀ Estimated [mΩ]", line=dict(color="#2E86AB", width=2)
+                    ))
+                    fig_r0.add_trace(go.Scatter(
+                        x=asset_data["time"], y=(r0+2*sr)*1000,
+                        mode="lines", line=dict(width=0), showlegend=False
+                    ))
+                    fig_r0.add_trace(go.Scatter(
+                        x=asset_data["time"], y=(r0-2*sr)*1000, fill="tonexty",
+                        fillcolor="rgba(46,134,171,0.15)",
+                        line=dict(width=0), name="95% CI"
+                    ))
+                    fig_r0.update_layout(
+                        template="plotly_white", height=300,
+                        xaxis_title="Time [s]", yaxis_title="R₀ [mΩ]",
+                        title="Online R₀ Estimation — Dual EKF"
+                    )
+                    st.plotly_chart(fig_r0, use_container_width=True)
+    
+            st.info(
+                "**Notes:** "
+                "Voltage RMSE = ‖V_DFN − V_ECM_reconstructed‖, not innovation. "
+                "Entropic heating −I·T·(dU/dT) included in thermal model. "
+                "Dual EKF tracks R₀ via random-walk prior; Q_w controls adaptation speed."
+            )
+        
 
 if __name__ == "__main__":
     main()
