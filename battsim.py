@@ -899,7 +899,7 @@ def main():
             st.header("⚙️ Configuration")
     
             with st.expander("🔋 Physical Asset", expanded=True):
-                cycles  = st.number_input("Cycles", 1, 20, 3)
+                cycles  = st.number_input("Cycles", 1, 100, 3)
                 c_rate  = st.slider("Discharge C-rate", 0.5, 2.0, 1.0, 0.1)
                 noise_v = st.number_input("Voltage noise σ [V]", 0.0001, 0.05, 0.005, format="%.4f")
                 noise_t = st.number_input("Temperature noise σ [K]", 0.001, 5.0, 0.2, format="%.3f")
