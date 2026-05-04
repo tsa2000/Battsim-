@@ -847,7 +847,7 @@ def create_comprehensive_plots(time, asset_data, results, enable_pf=True, enable
         height=1600 if dual_r0_row else 1400,
         template="plotly_white",
         font=dict(family="IBM Plex Sans, sans-serif", size=11),
-        title=dict(text="Digital Twin UQ — AEKF | UKF | PF | Dual EKF", font=dict(size=17)),
+        title=dict(text="Digital Twin UQ — AEKF | UKF | Dual EKF", font=dict(size=17)),
         legend=dict(orientation="v", y=1.0, x=1.12,
                     bgcolor="rgba(255,255,255,0.9)", bordercolor="#ccc", borderwidth=1),
     )
