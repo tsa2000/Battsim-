@@ -1001,10 +1001,6 @@ with st.expander("📐 System Architecture", expanded=False):
             "fig": fig,
             "enable_dual": enable_dual
         }
-        st.rerun()
-
-
-
         bar.progress(100)
         stat.success(f"✅ Done — steady-state metrics exclude first {cutoff} samples (10%)")
 
