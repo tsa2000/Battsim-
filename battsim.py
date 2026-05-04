@@ -886,6 +886,9 @@ def generate_pdf_report(res):
     enable_dual = res["enable_dual"]
     settings = res.get("settings", {})
     
+    def safe_txt(text):
+        return str(text).replace('σ', 'sigma').replace('Ω', 'Ohm').replace('χ²', 'chi^2').replace('₀', '0')
+
     pdf.set_font("helvetica", "B", 12)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 10, "1. Executive Performance Summary (Steady-State)", ln=True)
@@ -895,7 +898,7 @@ def generate_pdf_report(res):
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("helvetica", "B", 10)
     for head in ["Filter", "SOC RMSE (%)", "Voltage RMSE (mV)", "PICP (%)"]: 
-        pdf.cell(col_w, line_h, head, border=1, fill=True, ln=(head=="PICP (%)"))
+        pdf.cell(col_w, line_h, safe_txt(head), border=1, fill=True, ln=(head=="PICP (%)"))
     
     pdf.set_font("helvetica", "", 10)
     labels = {"aekf": "AEKF", "ukf": "UKF", "dual": "Dual EKF"}
@@ -909,35 +912,41 @@ def generate_pdf_report(res):
 
     pdf.set_font("helvetica", "B", 12)
     pdf.cell(0, 10, "2. System Configuration & Filter Tuning", ln=True)
+    
     def draw_settings_table(title, data_dict):
         pdf.set_font("helvetica", "B", 9)
         pdf.set_fill_color(220, 230, 240)
-        pdf.cell(95, 7, title, border=1, fill=True)
+        pdf.cell(95, 7, safe_txt(title), border=1, fill=True)
         pdf.cell(95, 7, "Value", border=1, ln=True, fill=True)
         pdf.set_font("helvetica", "", 9)
         for k, v in data_dict.items():
-            pdf.cell(95, 6, str(k), border=1)
-            pdf.cell(95, 6, str(v), border=1, ln=True)
+            pdf.cell(95, 6, safe_txt(str(k)), border=1)
+            pdf.cell(95, 6, safe_txt(str(v)), border=1, ln=True)
         pdf.ln(5)
 
     if settings:
         draw_settings_table("Operating Conditions & Sensor Noise", {
-            "Cycles": settings["Cycles"], "Discharge C-rate": settings["Discharge C-rate"], 
-            "Voltage Noise (σ)": f"{settings['Voltage Noise σ [V]']} V", "Temp Noise (σ)": f"{settings['Temp Noise σ [K]']} K"
+            "Cycles": settings["Cycles"],
+            "Discharge C-rate": settings["Discharge C-rate"], 
+            "Voltage Noise (sigma)": f"{settings['Voltage Noise σ [V]']} V",
+            "Temp Noise (sigma)": f"{settings['Temp Noise σ [K]']} K"
         })
         draw_settings_table("Equivalent Circuit Model (ECM)", {
-            "R0, R1, R2 [Ω]": f"{settings['R0 [Ω]']}, {settings['R1 [Ω]']}, {settings['R2 [Ω]']}", 
-            "C1, C2 [F]": f"{settings['C1 [F]']}, {settings['C2 [F]']}", "Ambient Temp [K]": settings['T_ambient [K]']
+            "R0, R1, R2 [Ohm]": f"{settings['R0 [Ω]']}, {settings['R1 [Ω]']}, {settings['R2 [Ω]']}", 
+            "C1, C2 [F]": f"{settings['C1 [F]']}, {settings['C2 [F]']}",
+            "Ambient Temp [K]": settings['T_ambient [K]']
         })
         draw_settings_table("Filter Tuning Matrices (Diagonals)", {
-            "P0 [SOC, V1, V2, T]": str(settings["P0_diag"]), "Q Process Noise": str(settings["Q_diag"]), "R Meas. Noise": str(settings["R_diag"])
+            "P0 [SOC, V1, V2, T]": str(settings["P0_diag"]),
+            "Q Process Noise": str(settings["Q_diag"]),
+            "R Meas. Noise": str(settings["R_diag"])
         })
 
     def add_plot(fig, title):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             pio.write_image(fig, tmp.name, format="png", width=1000, height=550, scale=2)
             pdf.set_font("helvetica", "B", 11)
-            pdf.cell(0, 8, title, ln=True)
+            pdf.cell(0, 8, safe_txt(title), ln=True)
             pdf.image(tmp.name, x=15, w=180)
             pdf.ln(5)
             os.remove(tmp.name)
@@ -947,8 +956,8 @@ def generate_pdf_report(res):
     pdf.cell(0, 10, "3. Filter UQ Analysis (AEKF Example)", ln=True)
     fig_aekf = go.Figure()
     fig_aekf.add_trace(go.Scatter(x=time, y=(results["aekf"]["soc"] - res["asset_data"]["soc_true"])*100, name="Error (%)", line=dict(color="#A23B72")))
-    fig_aekf.add_trace(go.Scatter(x=time, y=2*results["aekf"]["sigma"]*100, name="+2σ", line=dict(color="gray", dash="dot")))
-    fig_aekf.add_trace(go.Scatter(x=time, y=-2*results["aekf"]["sigma"]*100, name="-2σ", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
+    fig_aekf.add_trace(go.Scatter(x=time, y=2*results["aekf"]["sigma"]*100, name="+2sigma", line=dict(color="gray", dash="dot")))
+    fig_aekf.add_trace(go.Scatter(x=time, y=-2*results["aekf"]["sigma"]*100, name="-2sigma", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
     fig_aekf.update_layout(title="AEKF Estimation Error vs Uncertainty (UQ)", yaxis_title="Error [%]", template="plotly_white", margin=dict(t=40, b=10, l=10, r=10))
     add_plot(fig_aekf, "AEKF Error Tracking Bounds")
 
@@ -960,12 +969,12 @@ def generate_pdf_report(res):
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("helvetica", "B", 8)
     for col in df.columns: 
-        pdf.cell(col_w_s, 8, str(col)[:15], border=1, fill=True, align="C")
+        pdf.cell(col_w_s, 8, safe_txt(str(col)[:15]), border=1, fill=True, align="C")
     pdf.ln()
     pdf.set_font("helvetica", "", 8)
     for _, row in df.iterrows():
         for item in row: 
-            pdf.cell(col_w_s, 8, str(item), border=1, align="C")
+            pdf.cell(col_w_s, 8, safe_txt(str(item)), border=1, align="C")
         pdf.ln()
 
     return bytes(pdf.output())
