@@ -687,6 +687,8 @@ def analyze_cycles(asset_data, results, ecm, enable_dual=True):
     time = asset_data["time"]
     current = asset_data["current_true"]
     soc_true = asset_data["soc_true"]
+    voltage_true = asset_data["voltage_true"]
+    I_meas = asset_data["current_meas"]
 
     cycles = detect_cycles(time, current)
     cycle_data = []
@@ -699,21 +701,35 @@ def analyze_cycles(asset_data, results, ecm, enable_dual=True):
 
             s_seg = r["soc"][start:end + 1]
             t_seg = soc_true[start:end + 1]
-            rmse = np.sqrt(np.mean((s_seg - t_seg) ** 2)) * 100
-            cycle_info[f"{name.upper()} RMSE (%)"] = round(rmse, 4)
+            v_true_seg = voltage_true[start:end + 1]
+            I_meas_seg = I_meas[start:end + 1]
 
-            sigma_seg = r["sigma"][start:end + 1]
-            mpiw = np.mean(4 * sigma_seg) * 100
-            cycle_info[f"{name.upper()} MPIW (%)"] = round(mpiw, 4)
+            soc_rmse = np.sqrt(np.mean((s_seg - t_seg) ** 2)) * 100
+            soc_mae = np.mean(np.abs(s_seg - t_seg)) * 100
 
-            if "nis" in r and len(r["nis"]) > end:
-                nis_seg = r["nis"][start:end + 1]
-                nis_within, _ = UQMetrics.nis_consistency(nis_seg)
-                cycle_info[f"{name.upper()} NIS (%)"] = round(nis_within, 1)
+            r0_arr = r.get("R0_est", None)
+            r0_seg = r0_arr[start:end + 1] if r0_arr is not None else None
+
+            v_model_seg = reconstruct_voltage(
+                ecm,
+                s_seg,
+                r["v1"][start:end + 1],
+                r["v2"][start:end + 1],
+                r["temp"][start:end + 1],
+                I_meas_seg,
+                r0_seg,
+            )
+
+            volt_rmse = np.sqrt(np.mean((v_model_seg - v_true_seg) ** 2)) * 1000
+
+            cycle_info[f"{name.upper()} SOC RMSE (%)"] = round(soc_rmse, 4)
+            cycle_info[f"{name.upper()} SOC MAE (%)"] = round(soc_mae, 4)
+            cycle_info[f"{name.upper()} Volt RMSE (mV)"] = round(volt_rmse, 2)
 
         cycle_data.append(cycle_info)
 
     return pd.DataFrame(cycle_data)
+
 
 
 
