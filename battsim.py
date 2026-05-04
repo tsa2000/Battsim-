@@ -654,6 +654,43 @@ def compute_metrics(asset_data, results, ecm, enable_pf=True, enable_dual=True):
 
     return metrics, cutoff
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# CYCLE-BY-CYCLE ANALYSIS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def detect_cycles(time, current, threshold=0.1):
+    cycle_markers = []
+    in_discharge = current[0] < -threshold
+    cycle_start = 0
+    for i in range(1, len(current)):
+        now_discharge = current[i] < -threshold
+        if now_discharge != in_discharge:
+            cycle_markers.append((cycle_start, i - 1))
+            cycle_start = i
+            in_discharge = now_discharge
+    cycle_markers.append((cycle_start, len(current) - 1))
+    return cycle_markers
+
+
+def analyze_cycles(asset_data, results, ecm, enable_dual=True):
+    time = asset_data["time"]
+    current = asset_data["current_true"]
+    soc_true = asset_data["soc_true"]
+    voltage_true = asset_data["voltage_true"]
+    I_meas = asset_data["current_meas"]
+
+    cycles = detect_cycles(time, current)
+    cycle_data = []
+    for cycle_idx, (start, end) in enumerate(cycles):
+        cycle_info = {"Cycle": cycle_idx + 1}
+        for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
+            r = results[name]
+            s_seg = r["soc"][start:end + 1]
+            t_seg = soc_true[start:end + 1]
+            rmse = np.sqrt(np.mean((s_seg - t_seg) ** 2)) * 100
+            cycle_info[f"{name.upper()} RMSE (%)"] = round(rmse, 4)
+        cycle_data.append(cycle_info)
+    return pd.DataFrame(cycle_data)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -791,7 +828,7 @@ def main():
 
     st.title("🔋 NMC622 Digital Twin — Advanced UQ Framework")
     st.caption(
-        "DFN Physical Asset · 2-RC ECM · AEKF · UKF · PF · Dual EKF | "
+        "DFN Physical Asset · 2-RC ECM · AEKF · UKF · Dual EKF | "
         "Comprehensive thermal model with entropic heating"
     )
 
@@ -849,8 +886,10 @@ UQ Metrics: RMSE_SOC, RMSE_Volt, PICP, MPIW, NIS
             q_w_val = st.number_input("Q_w (R₀ Process Noise)", 1e-15, 1e-6, 1e-12, format="%.2e")
 
         with st.expander("🔧 Options", expanded=True):
-            enable_pf   = st.checkbox("Enable Particle Filter",  value=True)
-            n_particles = st.slider("PF particles", 100, 2000, 500, 50)
+           # enable_pf   = st.checkbox("Enable Particle Filter",  value=True)
+            #n_particles = st.slider("PF particles", 100, 2000, 500, 50)
+            enable_pf   = false
+            n_particles  = 500
             enable_dual = st.checkbox("Enable Dual EKF (R₀ tracking)", value=True)
 
         run_btn = st.button("🚀 Run Digital Twin", use_container_width=True)
@@ -887,6 +926,10 @@ UQ Metrics: RMSE_SOC, RMSE_Volt, PICP, MPIW, NIS
             enable_pf=enable_pf, enable_dual=enable_dual,
         )
 
+        cycle_df = analyze_cycles(asset_data, results, ecm_ref, enable_dual=enable_dual)
+        st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
+        st.dataframe(cycle_df, use_container_width=True)
+        
         stat.text("🎨 Rendering…")
         bar.progress(92)
         fig = create_comprehensive_plots(
@@ -898,6 +941,9 @@ UQ Metrics: RMSE_SOC, RMSE_Volt, PICP, MPIW, NIS
         stat.success(f"✅ Done — steady-state metrics exclude first {cutoff} samples (10%)")
 
         st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("📋 Cycle-by-Cycle Uncertainty Analysis")
+        st.dataframe(cycle_df, use_container_width=True)
 
         st.subheader("📈 Performance Metrics (Steady-State)")
 
