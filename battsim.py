@@ -1161,8 +1161,7 @@ def main():
 
     st.title("🔋 NMC622 Digital Twin — Advanced UQ Framework")
     st.caption(
-        "DFN Physical Asset · 2-RC ECM · AEKF · UKF · Dual EKF | "
-        "Comprehensive thermal model with entropic heating"
+        "Designed by Eng.Thaer Abushawer"
     )
 
     with st.expander("📐 System Architecture", expanded=False):
