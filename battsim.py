@@ -668,12 +668,15 @@ def detect_cycles(time, current, threshold=0.1):
         is_discharge = current[i] < -threshold
 
         if is_discharge and not was_discharge:
-            cycle_markers.append((cycle_start, i - 1))
-            cycle_start = i
+            if (i - cycle_start) > 20:
+                cycle_markers.append((cycle_start, i - 1))
+                cycle_start = i
 
         was_discharge = is_discharge
 
-    cycle_markers.append((cycle_start, len(current) - 1))
+    if (len(current) - 1 - cycle_start) > 20:
+        cycle_markers.append((cycle_start, len(current) - 1))
+
     return cycle_markers
 
 
