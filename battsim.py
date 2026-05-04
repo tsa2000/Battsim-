@@ -868,14 +868,6 @@ def create_comprehensive_plots(time, asset_data, results, enable_pf=True, enable
 # ═══════════════════════════════════════════════════════════════════════════════
 # 📄 PROFESSIONAL PDF GENERATOR (STRICT LAYOUT: 2 PLOTS/PAGE + TABS + SETTINGS)
 # ═══════════════════════════════════════════════════════════════════════════════
-import tempfile
-import os
-from fpdf import FPDF
-import plotly.io as pio
-import plotly.graph_objects as go
-import numpy as np
-
-
 class DigitalTwinPDF(FPDF):
     def header(self):
         self.set_font("helvetica", "B", 15)
