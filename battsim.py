@@ -4,6 +4,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pybamm
+import tempfile
+import os
+from fpdf import FPDF
+import plotly.io as pio
 from scipy.stats import chi2
 from dataclasses import dataclass
 import warnings
@@ -853,6 +857,118 @@ def create_comprehensive_plots(time, asset_data, results, enable_pf=True, enable
     )
     return fig
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PDF GENERATOR
+# ═══════════════════════════════════════════════════════════════════════════════
+class DigitalTwinPDF(FPDF):
+    def header(self):
+        self.set_font("helvetica", "B", 15)
+        self.set_text_color(46, 134, 171)
+        self.cell(0, 10, "NMC622 Battery Digital Twin - Engineering Report", border=False, ln=True, align="C")
+        self.set_draw_color(200, 200, 200)
+        self.line(10, 22, 200, 22)
+        self.ln(10)
+        
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("helvetica", "I", 8)
+        self.set_text_color(128, 128, 128)
+        self.cell(0, 10, f"Page {self.page_no()}", align="C")
+
+def generate_pdf_report(res):
+    pdf = DigitalTwinPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    metrics = res["metrics"]
+    results = res["results"]
+    time = res["asset_data"]["time"]
+    enable_dual = res["enable_dual"]
+    settings = res.get("settings", {})
+    
+    pdf.set_font("helvetica", "B", 12)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(0, 10, "1. Executive Performance Summary (Steady-State)", ln=True)
+    pdf.set_font("helvetica", "", 10)
+    col_w, line_h = 45, 8
+    
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font("helvetica", "B", 10)
+    for head in ["Filter", "SOC RMSE (%)", "Voltage RMSE (mV)", "PICP (%)"]: 
+        pdf.cell(col_w, line_h, head, border=1, fill=True, ln=(head=="PICP (%)"))
+    
+    pdf.set_font("helvetica", "", 10)
+    labels = {"aekf": "AEKF", "ukf": "UKF", "dual": "Dual EKF"}
+    for name in ["aekf", "ukf"] + (["dual"] if enable_dual else []):
+        m = metrics[name]
+        pdf.cell(col_w, line_h, labels[name], border=1)
+        pdf.cell(col_w, line_h, f"{m['rmse_soc']:.4f}", border=1)
+        pdf.cell(col_w, line_h, f"{m['rmse_volt']:.2f}", border=1)
+        pdf.cell(col_w, line_h, f"{m['picp']:.1f}", border=1, ln=True)
+    pdf.ln(10)
+
+    pdf.set_font("helvetica", "B", 12)
+    pdf.cell(0, 10, "2. System Configuration & Filter Tuning", ln=True)
+    def draw_settings_table(title, data_dict):
+        pdf.set_font("helvetica", "B", 9)
+        pdf.set_fill_color(220, 230, 240)
+        pdf.cell(95, 7, title, border=1, fill=True)
+        pdf.cell(95, 7, "Value", border=1, ln=True, fill=True)
+        pdf.set_font("helvetica", "", 9)
+        for k, v in data_dict.items():
+            pdf.cell(95, 6, str(k), border=1)
+            pdf.cell(95, 6, str(v), border=1, ln=True)
+        pdf.ln(5)
+
+    if settings:
+        draw_settings_table("Operating Conditions & Sensor Noise", {
+            "Cycles": settings["Cycles"], "Discharge C-rate": settings["Discharge C-rate"], 
+            "Voltage Noise (σ)": f"{settings['Voltage Noise σ [V]']} V", "Temp Noise (σ)": f"{settings['Temp Noise σ [K]']} K"
+        })
+        draw_settings_table("Equivalent Circuit Model (ECM)", {
+            "R0, R1, R2 [Ω]": f"{settings['R0 [Ω]']}, {settings['R1 [Ω]']}, {settings['R2 [Ω]']}", 
+            "C1, C2 [F]": f"{settings['C1 [F]']}, {settings['C2 [F]']}", "Ambient Temp [K]": settings['T_ambient [K]']
+        })
+        draw_settings_table("Filter Tuning Matrices (Diagonals)", {
+            "P0 [SOC, V1, V2, T]": str(settings["P0_diag"]), "Q Process Noise": str(settings["Q_diag"]), "R Meas. Noise": str(settings["R_diag"])
+        })
+
+    def add_plot(fig, title):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+            pio.write_image(fig, tmp.name, format="png", width=1000, height=550, scale=2)
+            pdf.set_font("helvetica", "B", 11)
+            pdf.cell(0, 8, title, ln=True)
+            pdf.image(tmp.name, x=15, w=180)
+            pdf.ln(5)
+            os.remove(tmp.name)
+
+    pdf.add_page()
+    pdf.set_font("helvetica", "B", 12)
+    pdf.cell(0, 10, "3. Filter UQ Analysis (AEKF Example)", ln=True)
+    fig_aekf = go.Figure()
+    fig_aekf.add_trace(go.Scatter(x=time, y=(results["aekf"]["soc"] - res["asset_data"]["soc_true"])*100, name="Error (%)", line=dict(color="#A23B72")))
+    fig_aekf.add_trace(go.Scatter(x=time, y=2*results["aekf"]["sigma"]*100, name="+2σ", line=dict(color="gray", dash="dot")))
+    fig_aekf.add_trace(go.Scatter(x=time, y=-2*results["aekf"]["sigma"]*100, name="-2σ", line=dict(color="gray", dash="dot"), fill='tonexty', fillcolor="rgba(128,128,128,0.15)"))
+    fig_aekf.update_layout(title="AEKF Estimation Error vs Uncertainty (UQ)", yaxis_title="Error [%]", template="plotly_white", margin=dict(t=40, b=10, l=10, r=10))
+    add_plot(fig_aekf, "AEKF Error Tracking Bounds")
+
+    pdf.add_page()
+    pdf.set_font("helvetica", "B", 12)
+    pdf.cell(0, 10, "4. Cycle-by-Cycle Analysis", ln=True)
+    df = res["cycle_df"]
+    col_w_s = 190 / len(df.columns)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font("helvetica", "B", 8)
+    for col in df.columns: 
+        pdf.cell(col_w_s, 8, str(col)[:15], border=1, fill=True, align="C")
+    pdf.ln()
+    pdf.set_font("helvetica", "", 8)
+    for _, row in df.iterrows():
+        for item in row: 
+            pdf.cell(col_w_s, 8, str(item), border=1, align="C")
+        pdf.ln()
+
+    return bytes(pdf.output())
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STREAMLIT APP
@@ -991,15 +1107,29 @@ def main():
             bar.progress(100)
             stat.success("✅ Machine 1 & 2 Synchronization Complete!")
             
+        if 'pdf_bytes' in st.session_state:
+            del st.session_state['pdf_bytes']
+
             st.session_state['sim_results'] = {
                 "asset_data": asset_data,
                 "results": results,
                 "metrics": metrics,
                 "cycle_df": cycle_df,
-                "fig": fig,
+                "fig": fig if 'fig' in locals() else None,
                 "enable_dual": enable_dual,
+                "settings": {
+                    "Cycles": cycles, "Discharge C-rate": c_rate,
+                    "Voltage Noise σ [V]": noise_v, "Temp Noise σ [K]": noise_t, "Current Noise σ [A]": noise_i,
+                    "R0 [Ω]": R0, "R1 [Ω]": R1, "C1 [F]": C1, "R2 [Ω]": R2, "C2 [F]": C2,
+                    "R_th [K/W]": R_th, "C_th [J/K]": C_th, "T_ambient [K]": T_amb,
+                    "P0_diag": [float(f"{x:.6e}") for x in P0_vals],
+                    "Q_diag": [float(f"{x:.6e}") for x in Q_vals],
+                    "R_diag": [float(f"{x:.6e}") for x in R_vals],
+                    "Q_w_dual": q_w_val
+                }
             }
             st.rerun()
+
 # ══════════════════════════════════════════════════════════════════════════
 # DISPLAY BLOCK (Executive Summary + Independent UQ Plots per Tab)
 # ══════════════════════════════════════════════════════════════════════════
@@ -1219,6 +1349,23 @@ def main():
                 "Dual EKF tracks R₀ via random-walk prior."
             )
 
+        st.divider()
+        st.write("") 
+        
+        col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+        with col_btn2:
+            with st.spinner("Generating High-Resolution PDF Report... (Takes ~5 seconds)"):
+                if 'pdf_bytes' not in st.session_state:
+                    st.session_state['pdf_bytes'] = generate_pdf_report(res)
+                
+                st.download_button(
+                    label="📄 Download Official Engineering Report (PDF)",
+                    data=st.session_state['pdf_bytes'],
+                    file_name="Digital_Twin_UQ_Report.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary"
+                )
 
         
 
