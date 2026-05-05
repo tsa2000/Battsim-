@@ -396,20 +396,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 📊 Performance Benchmarks
-
-Typical performance on reference hardware (Intel i7, 16GB RAM):
-
-| Metric | AEKF | UKF | Dual EKF |
-|--------|------|-----|----------|
-| SOC RMSE | 0.8-1.2% | 0.7-1.1% | 0.6-1.0% |
-| Voltage RMSE | 15-25 mV | 12-22 mV | 10-20 mV |
-| PICP (95%) | 92-96% | 94-97% | 93-96% |
-| NIS Pass Rate | 93-97% | 94-98% | 94-98% |
-| Computation Time/Step | ~2 ms | ~8 ms | ~4 ms |
-
-*Results for 3 cycles @ 1C discharge, σ_v=5mV, σ_T=0.2K*
-
----
-
 **⭐ If you find this project useful, please consider starring the repository!**
