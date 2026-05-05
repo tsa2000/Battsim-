@@ -387,13 +387,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 🙏 Acknowledgments
-
-- **PyBaMM Development Team** for the open-source electrochemical modeling framework
-- **Streamlit** for the reactive web application platform
-- **Chen et al. (2020)** for validated NMC622 parameter sets
-- **Battery research community** for advancing state estimation methodologies
-
----
-
 **⭐ If you find this project useful, please consider starring the repository!**
